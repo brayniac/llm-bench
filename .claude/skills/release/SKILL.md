@@ -85,12 +85,17 @@ Example: `/release minor`
    ```
 
 8. **Push and create PR**:
+   - The upstream repo is `iopsystems/llm-bench`
+   - The fork remote is `origin` (determine the owner from `git remote -v`)
+
    ```bash
    git push -u origin release/v${NEW_VERSION}
 
    gh pr create \
+     --repo iopsystems/llm-bench \
+     --head <fork-owner>:release/v${NEW_VERSION} \
      --title "release: v${NEW_VERSION}" \
-     --body "$(cat <<EOF
+     --body "$(cat <<'EOF'
    ## Release v${NEW_VERSION}
 
    This PR prepares the release of v${NEW_VERSION}.
@@ -101,9 +106,9 @@ Example: `/release minor`
 
    ### After Merge
    The release workflow will automatically:
-   1. Create git tag \`v${NEW_VERSION}\`
+   1. Create git tag `v${NEW_VERSION}`
    2. Build and publish release artifacts (deb/rpm for amd64/arm64)
-   3. Bump to next development version (\`-alpha.0\`)
+   3. Bump to next development version (`-alpha.0`)
 
    ---
    See CHANGELOG.md for details.
