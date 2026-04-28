@@ -115,7 +115,7 @@ impl SaturationSearchState {
         self.step_itl_snapshot = merge_histogram_group(&metrics::ITL);
         self.step_tpot_snapshot = merge_histogram_group(&metrics::TPOT);
         self.step_output_tokens = output_tokens_total();
-        self.step_requests_success = metrics::REQUESTS_SUCCESS.value();
+        self.step_requests_success = metrics::REQUESTS.value(metrics::REQ_SUCCESS).unwrap_or(0);
     }
 
     /// Check if the sample window has elapsed and advance to the next step.
@@ -142,7 +142,7 @@ impl SaturationSearchState {
         let current_itl = merge_histogram_group(&metrics::ITL);
         let current_tpot = merge_histogram_group(&metrics::TPOT);
         let current_output_tokens = output_tokens_total();
-        let current_requests_success = metrics::REQUESTS_SUCCESS.value();
+        let current_requests_success = metrics::REQUESTS.value(metrics::REQ_SUCCESS).unwrap_or(0);
 
         // Compute deltas
         let delta_output_tokens = current_output_tokens.saturating_sub(self.step_output_tokens);
@@ -407,7 +407,12 @@ fn extract_percentiles_ms(histogram: &Option<Histogram>) -> (f64, f64, f64) {
 
 /// Total output tokens (reasoning + content).
 fn output_tokens_total() -> u64 {
-    metrics::TOKENS_OUTPUT_REASONING.value() + metrics::TOKENS_OUTPUT_CONTENT.value()
+    metrics::TOKENS
+        .value(metrics::TOK_OUTPUT_REASONING)
+        .unwrap_or(0)
+        + metrics::TOKENS
+            .value(metrics::TOK_OUTPUT_CONTENT)
+            .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------

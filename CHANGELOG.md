@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.11] - 2026-04-28
+
+### Features
+
+- Add saturation search to find max compliant concurrency (#42)
+- Add reasoning model support with phase-aware metrics (#33)
+- Split TTFT into separate metrics and add phase-aware token counting (#34)
+- Add multi-turn conversation support and dataset auto-download (#36)
+- Add configurable shots, penalties, and OpenCompass-style eval for MMLU-Pro (#38, #39)
+- Add overall progress tracking across categories for MMLU-Pro (#44)
+
+### Bug Fixes
+
+- Measure throughput with successful requests only (#43)
+- Add error tracking, retries, and progress improvements to MMLU-Pro (#40)
+- Upgrade metriken-exposition to 0.13 for PromQL-compatible snapshots (#32)
+- Fix TTFT and ITL always reported as 0.0 in JSON and console output.
+  Aggregate context-aware histogram buckets to produce overall percentiles.
+- Use server-reported token counts via `stream_options.include_usage` instead of
+  re-tokenizing with tiktoken's `cl100k_base`, which produced inaccurate counts
+  for non-OpenAI models (Llama, Qwen, Mistral, etc.). Falls back to tiktoken
+  when the server doesn't support it.
+- Add TTFT and ITL to console and brief summary output.
+- Fix SSE streaming parser to handle multiple events batched in a single HTTP
+  chunk. Previously only the first event was processed and the rest were silently
+  dropped, causing lost response content and underreported token/s — especially
+  at low concurrency where servers like llama.cpp may batch multiple SSE events
+  into one TCP segment.
+- Handle partial SSE lines split across HTTP chunk boundaries.
+
+### Changes
+
+- Rename project from llm-bench to llm-perf (#27)
+- Convert mmlu-pro from separate binary to subcommand (#29)
+- Refactor request status tracking to distinguish errors, timeouts, and cancellations (#41)
+- Align mmlu-pro config with benchmark conventions (#37)
+- Replace ringlog with tracing-appender for non-blocking logging (#35)
+- Add canonical formatter for unique parquet column names (#30)
+- Upgrade reqwest from 0.11 to 0.12, removing duplicate dependency and unmaintained rustls-pemfile
+- Update quinn-proto to 0.11.14 to fix RUSTSEC-2026-0037
+- Housekeeping cleanup — docs, dead code, and bug fixes (#28)
+- Add `logprobs` subcommand for sequential token-level log probability collection (one request at a time, no concurrent load) to avoid GPU batching non-determinism
+- Add `kl-divergence` subcommand to compare token probability distributions between two logprob JSONL captures
+- Add logprobs streaming support to OpenAI client (TokenLogprob, TopLogprob, ChoiceLogprobs types)
+- Add CLI subcommand architecture with backward-compatible config file argument
+- Replace OpenSSL with rustls for TLS, eliminating the native OpenSSL/native-tls dependency chain
+- Use prebuilt cargo-audit binary in CI
+- Gitignore generated prompt files
+- Add PR skill and update release skill for fork workflow
+- Add CI workflow with fmt, clippy, doc, audit, test, and test-release jobs
+- Track Cargo.lock for reproducible builds
+- Update dependencies to resolve security advisories (bytes, slab, time)
+- Fix doc examples referencing renamed `Config::from_file` method
+- Apply rustfmt formatting fixes
+- Check server readiness on launch before starting benchmark
+- Remove redundant overall TTFT/ITL histograms in favor of context-aware variants
+- Fix collapsible if statements for clippy compliance
+- Add release and tag-release GitHub Actions workflows
+- Add /release skill for creating release PRs
+- Add mmlu-pro binary to deb and rpm packaging
+- Fixed success rate calculation in benchmark reports. Previously, success rate was calculated as `successful_requests / total_sent_requests`, which included in-flight requests that hadn't completed yet in duration-based tests. Now correctly calculated as `successful_requests / completed_requests`, providing an accurate success rate for completed requests only.
+
+### Infrastructure
+
+- Add CI workflow with fmt, clippy, doc, audit, test, and test-release jobs
+- Track Cargo.lock for reproducible builds
+- Update dependencies to resolve security advisories (bytes, slab, time)
+- Fix doc examples referencing renamed `Config::from_file` method
+- Apply rustfmt formatting fixes
+- Check server readiness on launch before starting benchmark
+- Remove redundant overall TTFT/ITL histograms in favor of context-aware variants
+- Fix collapsible if statements for clippy compliance
+- Add release and tag-release GitHub Actions workflows
+- Add /release skill for creating release PRs
+- Add mmlu-pro binary to deb and rpm packaging
+- Fix tag-release workflow to match squash-merge commit message format
+
 ## [Unreleased]
 
 ## [0.1.10] - 2026-04-15

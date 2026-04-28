@@ -1,4 +1,4 @@
-use metriken::{AtomicHistogram, Counter, Gauge, HistogramGroup, LazyCounter, LazyGauge, metric};
+use metriken::{AtomicHistogram, Counter, CounterGroup, Gauge, HistogramGroup, LazyGauge, metric};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -33,55 +33,51 @@ pub enum Phase {
 // Global running flag for background tasks
 pub static RUNNING: AtomicBool = AtomicBool::new(false);
 
-// Request metrics
-#[metric(name = "requests", metadata = { status = "sent" })]
-pub static REQUESTS_SENT: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "requests", metadata = { status = "success" })]
-pub static REQUESTS_SUCCESS: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "requests", metadata = { status = "error" })]
-pub static REQUESTS_ERROR: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "requests", metadata = { status = "timeout" })]
-pub static REQUESTS_TIMEOUT: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "requests", metadata = { status = "canceled" })]
-pub static REQUESTS_CANCELED: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "requests", metadata = { status = "retried" })]
-pub static REQUESTS_RETRIED: LazyCounter = LazyCounter::new(Counter::default);
+// Request counters — indexed by status
+pub const REQ_SENT: usize = 0;
+pub const REQ_SUCCESS: usize = 1;
+pub const REQ_ERROR: usize = 2;
+pub const REQ_TIMEOUT: usize = 3;
+pub const REQ_CANCELED: usize = 4;
+pub const REQ_RETRIED: usize = 5;
 
-// Error category metrics
-#[metric(name = "errors", metadata = { "type" = "connection" })]
-pub static ERRORS_CONNECTION: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "errors", metadata = { "type" = "http_4xx" })]
-pub static ERRORS_HTTP_4XX: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "errors", metadata = { "type" = "http_5xx" })]
-pub static ERRORS_HTTP_5XX: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "errors", metadata = { "type" = "parse" })]
-pub static ERRORS_PARSE: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "errors", metadata = { "type" = "stream" })]
-pub static ERRORS_STREAM: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "errors", metadata = { "type" = "other" })]
-pub static ERRORS_OTHER: LazyCounter = LazyCounter::new(Counter::default);
+#[metric(name = "requests")]
+pub static REQUESTS: CounterGroup = CounterGroup::new(6);
 
-// Token metrics — input has no phase, output is split by phase
-#[metric(name = "tokens", metadata = { direction = "input" })]
-pub static TOKENS_INPUT: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "tokens", metadata = { direction = "output", phase = "reasoning" })]
-pub static TOKENS_OUTPUT_REASONING: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "tokens", metadata = { direction = "output", phase = "content" })]
-pub static TOKENS_OUTPUT_CONTENT: LazyCounter = LazyCounter::new(Counter::default);
+// Error counters — indexed by error type
+pub const ERR_CONNECTION: usize = 0;
+pub const ERR_HTTP_4XX: usize = 1;
+pub const ERR_HTTP_5XX: usize = 2;
+pub const ERR_PARSE: usize = 3;
+pub const ERR_STREAM: usize = 4;
+pub const ERR_OTHER: usize = 5;
+
+#[metric(name = "errors")]
+pub static ERRORS: CounterGroup = CounterGroup::new(6);
+
+// Token counters — indexed by direction/phase
+pub const TOK_INPUT: usize = 0;
+pub const TOK_OUTPUT_REASONING: usize = 1;
+pub const TOK_OUTPUT_CONTENT: usize = 2;
+
+#[metric(name = "tokens")]
+pub static TOKENS: CounterGroup = CounterGroup::new(3);
 
 // Concurrency metrics
 #[metric(name = "requests_inflight")]
 pub static REQUESTS_INFLIGHT: LazyGauge = LazyGauge::new(Gauge::default);
 
-// Conversation metrics (multi-turn)
-#[metric(name = "conversations", metadata = { status = "sent" })]
-pub static CONVERSATIONS_SENT: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "conversations", metadata = { status = "success" })]
-pub static CONVERSATIONS_SUCCESS: LazyCounter = LazyCounter::new(Counter::default);
-#[metric(name = "conversations", metadata = { status = "failed" })]
-pub static CONVERSATIONS_FAILED: LazyCounter = LazyCounter::new(Counter::default);
+// Conversation counters — indexed by status
+pub const CONV_SENT: usize = 0;
+pub const CONV_SUCCESS: usize = 1;
+pub const CONV_FAILED: usize = 2;
+
+#[metric(name = "conversations")]
+pub static CONVERSATIONS: CounterGroup = CounterGroup::new(3);
+
 #[metric(name = "turns")]
-pub static TURNS_TOTAL: LazyCounter = LazyCounter::new(Counter::default);
+pub static TURNS: Counter = Counter::new();
+
 #[metric(name = "conversation_latency", metadata = { unit = "nanoseconds" })]
 pub static CONVERSATION_LATENCY: AtomicHistogram = AtomicHistogram::new(7, 64);
 
@@ -164,6 +160,63 @@ impl Metrics {
         let ctx_names = ["small", "medium", "large", "xlarge", "xxlarge"];
         let phase_names = ["reasoning", "content"];
 
+        // Request counter metadata
+        for (idx, status) in ["sent", "success", "error", "timeout", "canceled", "retried"]
+            .iter()
+            .enumerate()
+        {
+            REQUESTS.set_metadata(
+                idx,
+                HashMap::from([("status".to_string(), status.to_string())]),
+            );
+        }
+
+        // Error counter metadata
+        for (idx, error_type) in [
+            "connection",
+            "http_4xx",
+            "http_5xx",
+            "parse",
+            "stream",
+            "other",
+        ]
+        .iter()
+        .enumerate()
+        {
+            ERRORS.set_metadata(
+                idx,
+                HashMap::from([("type".to_string(), error_type.to_string())]),
+            );
+        }
+
+        // Token counter metadata
+        TOKENS.set_metadata(
+            TOK_INPUT,
+            HashMap::from([("direction".to_string(), "input".to_string())]),
+        );
+        TOKENS.set_metadata(
+            TOK_OUTPUT_REASONING,
+            HashMap::from([
+                ("direction".to_string(), "output".to_string()),
+                ("phase".to_string(), "reasoning".to_string()),
+            ]),
+        );
+        TOKENS.set_metadata(
+            TOK_OUTPUT_CONTENT,
+            HashMap::from([
+                ("direction".to_string(), "output".to_string()),
+                ("phase".to_string(), "content".to_string()),
+            ]),
+        );
+
+        // Conversation counter metadata
+        for (idx, status) in ["sent", "success", "failed"].iter().enumerate() {
+            CONVERSATIONS.set_metadata(
+                idx,
+                HashMap::from([("status".to_string(), status.to_string())]),
+            );
+        }
+
         // TTFT and TTFT_CONTENT per-index metadata
         for (idx, name) in ctx_names.iter().enumerate() {
             let meta = HashMap::from([("context_size".to_string(), name.to_string())]);
@@ -194,7 +247,7 @@ impl Metrics {
     }
 
     pub fn record_request_sent() {
-        REQUESTS_SENT.increment();
+        REQUESTS.increment(REQ_SENT);
         REQUESTS_INFLIGHT.increment();
     }
 
@@ -202,35 +255,35 @@ impl Metrics {
         REQUESTS_INFLIGHT.decrement();
         match status {
             RequestStatus::Success => {
-                REQUESTS_SUCCESS.increment();
+                REQUESTS.increment(REQ_SUCCESS);
             }
             RequestStatus::Failed(error_type) => match error_type {
                 ErrorType::Timeout => {
-                    REQUESTS_TIMEOUT.increment();
+                    REQUESTS.increment(REQ_TIMEOUT);
                 }
                 _ => {
-                    REQUESTS_ERROR.increment();
+                    REQUESTS.increment(REQ_ERROR);
                     match error_type {
-                        ErrorType::Connection => ERRORS_CONNECTION.increment(),
-                        ErrorType::Http4xx(_) => ERRORS_HTTP_4XX.increment(),
-                        ErrorType::Http5xx(_) => ERRORS_HTTP_5XX.increment(),
-                        ErrorType::Parse => ERRORS_PARSE.increment(),
-                        ErrorType::Stream => ERRORS_STREAM.increment(),
-                        ErrorType::Other => ERRORS_OTHER.increment(),
+                        ErrorType::Connection => ERRORS.increment(ERR_CONNECTION),
+                        ErrorType::Http4xx(_) => ERRORS.increment(ERR_HTTP_4XX),
+                        ErrorType::Http5xx(_) => ERRORS.increment(ERR_HTTP_5XX),
+                        ErrorType::Parse => ERRORS.increment(ERR_PARSE),
+                        ErrorType::Stream => ERRORS.increment(ERR_STREAM),
+                        ErrorType::Other => ERRORS.increment(ERR_OTHER),
                         ErrorType::Timeout => unreachable!(),
                     };
                 }
             },
             RequestStatus::Canceled => {
-                REQUESTS_CANCELED.increment();
+                REQUESTS.increment(REQ_CANCELED);
             }
         }
     }
 
     pub fn record_tokens(input: u64, output_reasoning: u64, output_content: u64) {
-        TOKENS_INPUT.add(input);
-        TOKENS_OUTPUT_REASONING.add(output_reasoning);
-        TOKENS_OUTPUT_CONTENT.add(output_content);
+        TOKENS.add(TOK_INPUT, input);
+        TOKENS.add(TOK_OUTPUT_REASONING, output_reasoning);
+        TOKENS.add(TOK_OUTPUT_CONTENT, output_content);
     }
 
     /// Record TTFT — first token of any kind (prefill latency).
@@ -262,23 +315,23 @@ impl Metrics {
     }
 
     pub fn record_retry() {
-        REQUESTS_RETRIED.increment();
+        REQUESTS.increment(REQ_RETRIED);
     }
 
     pub fn record_conversation_sent() {
-        CONVERSATIONS_SENT.increment();
+        CONVERSATIONS.increment(CONV_SENT);
     }
 
     pub fn record_conversation_complete(success: bool) {
         if success {
-            CONVERSATIONS_SUCCESS.increment();
+            CONVERSATIONS.increment(CONV_SUCCESS);
         } else {
-            CONVERSATIONS_FAILED.increment();
+            CONVERSATIONS.increment(CONV_FAILED);
         }
     }
 
     pub fn record_turn() {
-        TURNS_TOTAL.increment();
+        TURNS.increment();
     }
 
     pub fn record_conversation_latency(duration: Duration) {

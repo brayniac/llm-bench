@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "addr2line"
-version = "0.1.11-alpha.0"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfbe277e56a376000877090da837660b4427aad530e3028d44e0bffe4f89a1c1"
 dependencies = [
@@ -1618,7 +1618,7 @@ checksum = "241eaef5fd12c88705a01fc1066c48c4b36e0dd4377dcdc7ec3942cea7a69956"
 
 [[package]]
 name = "llm-perf"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "arrow",
@@ -1703,7 +1703,7 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "metriken"
 version = "0.8.0"
-source = "git+https://github.com/iopsystems/metriken#1121de611584e3ff73c0291d9837f3f28c3984ca"
+source = "git+https://github.com/iopsystems/metriken#98db358b367b6eb907d90679dc01cbb3c29985f2"
 dependencies = [
  "histogram",
  "metriken-core",
@@ -1715,7 +1715,7 @@ dependencies = [
 [[package]]
 name = "metriken-core"
 version = "0.1.3"
-source = "git+https://github.com/iopsystems/metriken#1121de611584e3ff73c0291d9837f3f28c3984ca"
+source = "git+https://github.com/iopsystems/metriken#98db358b367b6eb907d90679dc01cbb3c29985f2"
 dependencies = [
  "histogram",
  "linkme",
@@ -1726,7 +1726,7 @@ dependencies = [
 [[package]]
 name = "metriken-derive"
 version = "0.5.1"
-source = "git+https://github.com/iopsystems/metriken#1121de611584e3ff73c0291d9837f3f28c3984ca"
+source = "git+https://github.com/iopsystems/metriken#98db358b367b6eb907d90679dc01cbb3c29985f2"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1737,7 +1737,7 @@ dependencies = [
 [[package]]
 name = "metriken-exposition"
 version = "0.14.0"
-source = "git+https://github.com/iopsystems/metriken#1121de611584e3ff73c0291d9837f3f28c3984ca"
+source = "git+https://github.com/iopsystems/metriken#98db358b367b6eb907d90679dc01cbb3c29985f2"
 dependencies = [
  "arrow",
  "chrono",
@@ -2508,9 +2508,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.12"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "ring",
  "rustls-pki-types",
