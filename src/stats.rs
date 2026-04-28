@@ -10,6 +10,11 @@ use tokio::time::{Instant, interval_at, timeout};
 use crate::config::Config;
 use crate::metrics::*;
 
+/// Helper to read a CounterGroup value, defaulting to 0.
+fn cg(group: &metriken::CounterGroup, idx: usize) -> u64 {
+    group.value(idx).unwrap_or(0)
+}
+
 /// Print with timestamp prefix
 macro_rules! output {
     () => {
@@ -59,38 +64,38 @@ impl MetricsSnapshot {
 
     fn new() -> Self {
         Self {
-            requests_sent: REQUESTS_SENT.value(),
-            requests_success: REQUESTS_SUCCESS.value(),
-            requests_error: REQUESTS_ERROR.value(),
-            requests_timeout: REQUESTS_TIMEOUT.value(),
-            requests_canceled: REQUESTS_CANCELED.value(),
-            tokens_input: TOKENS_INPUT.value(),
-            tokens_output: TOKENS_OUTPUT_REASONING.value() + TOKENS_OUTPUT_CONTENT.value(),
-            errors_connection: ERRORS_CONNECTION.value(),
-            errors_4xx: ERRORS_HTTP_4XX.value(),
-            errors_5xx: ERRORS_HTTP_5XX.value(),
-            errors_parse: ERRORS_PARSE.value(),
-            errors_stream: ERRORS_STREAM.value(),
-            errors_other: ERRORS_OTHER.value(),
+            requests_sent: cg(&REQUESTS, REQ_SENT),
+            requests_success: cg(&REQUESTS, REQ_SUCCESS),
+            requests_error: cg(&REQUESTS, REQ_ERROR),
+            requests_timeout: cg(&REQUESTS, REQ_TIMEOUT),
+            requests_canceled: cg(&REQUESTS, REQ_CANCELED),
+            tokens_input: cg(&TOKENS, TOK_INPUT),
+            tokens_output: cg(&TOKENS, TOK_OUTPUT_REASONING) + cg(&TOKENS, TOK_OUTPUT_CONTENT),
+            errors_connection: cg(&ERRORS, ERR_CONNECTION),
+            errors_4xx: cg(&ERRORS, ERR_HTTP_4XX),
+            errors_5xx: cg(&ERRORS, ERR_HTTP_5XX),
+            errors_parse: cg(&ERRORS, ERR_PARSE),
+            errors_stream: cg(&ERRORS, ERR_STREAM),
+            errors_other: cg(&ERRORS, ERR_OTHER),
             tpot_histogram: Self::merge_tpot(),
             request_histogram: REQUEST_LATENCY.load(),
         }
     }
 
     fn update(&mut self) {
-        self.requests_sent = REQUESTS_SENT.value();
-        self.requests_success = REQUESTS_SUCCESS.value();
-        self.requests_error = REQUESTS_ERROR.value();
-        self.requests_timeout = REQUESTS_TIMEOUT.value();
-        self.requests_canceled = REQUESTS_CANCELED.value();
-        self.tokens_input = TOKENS_INPUT.value();
-        self.tokens_output = TOKENS_OUTPUT_REASONING.value() + TOKENS_OUTPUT_CONTENT.value();
-        self.errors_connection = ERRORS_CONNECTION.value();
-        self.errors_4xx = ERRORS_HTTP_4XX.value();
-        self.errors_5xx = ERRORS_HTTP_5XX.value();
-        self.errors_parse = ERRORS_PARSE.value();
-        self.errors_stream = ERRORS_STREAM.value();
-        self.errors_other = ERRORS_OTHER.value();
+        self.requests_sent = cg(&REQUESTS, REQ_SENT);
+        self.requests_success = cg(&REQUESTS, REQ_SUCCESS);
+        self.requests_error = cg(&REQUESTS, REQ_ERROR);
+        self.requests_timeout = cg(&REQUESTS, REQ_TIMEOUT);
+        self.requests_canceled = cg(&REQUESTS, REQ_CANCELED);
+        self.tokens_input = cg(&TOKENS, TOK_INPUT);
+        self.tokens_output = cg(&TOKENS, TOK_OUTPUT_REASONING) + cg(&TOKENS, TOK_OUTPUT_CONTENT);
+        self.errors_connection = cg(&ERRORS, ERR_CONNECTION);
+        self.errors_4xx = cg(&ERRORS, ERR_HTTP_4XX);
+        self.errors_5xx = cg(&ERRORS, ERR_HTTP_5XX);
+        self.errors_parse = cg(&ERRORS, ERR_PARSE);
+        self.errors_stream = cg(&ERRORS, ERR_STREAM);
+        self.errors_other = cg(&ERRORS, ERR_OTHER);
         self.tpot_histogram = Self::merge_tpot();
         self.request_histogram = REQUEST_LATENCY.load();
     }
@@ -131,19 +136,20 @@ pub async fn periodic_stats(config: Config, warmup_complete: Arc<Notify>) {
         }
 
         // Get current values
-        let current_requests_sent = REQUESTS_SENT.value();
-        let current_requests_success = REQUESTS_SUCCESS.value();
-        let current_requests_error = REQUESTS_ERROR.value();
-        let current_requests_timeout = REQUESTS_TIMEOUT.value();
-        let current_requests_canceled = REQUESTS_CANCELED.value();
-        let current_tokens_input = TOKENS_INPUT.value();
-        let current_tokens_output = TOKENS_OUTPUT_REASONING.value() + TOKENS_OUTPUT_CONTENT.value();
-        let current_errors_connection = ERRORS_CONNECTION.value();
-        let current_errors_4xx = ERRORS_HTTP_4XX.value();
-        let current_errors_5xx = ERRORS_HTTP_5XX.value();
-        let current_errors_parse = ERRORS_PARSE.value();
-        let current_errors_stream = ERRORS_STREAM.value();
-        let current_errors_other = ERRORS_OTHER.value();
+        let current_requests_sent = cg(&REQUESTS, REQ_SENT);
+        let current_requests_success = cg(&REQUESTS, REQ_SUCCESS);
+        let current_requests_error = cg(&REQUESTS, REQ_ERROR);
+        let current_requests_timeout = cg(&REQUESTS, REQ_TIMEOUT);
+        let current_requests_canceled = cg(&REQUESTS, REQ_CANCELED);
+        let current_tokens_input = cg(&TOKENS, TOK_INPUT);
+        let current_tokens_output =
+            cg(&TOKENS, TOK_OUTPUT_REASONING) + cg(&TOKENS, TOK_OUTPUT_CONTENT);
+        let current_errors_connection = cg(&ERRORS, ERR_CONNECTION);
+        let current_errors_4xx = cg(&ERRORS, ERR_HTTP_4XX);
+        let current_errors_5xx = cg(&ERRORS, ERR_HTTP_5XX);
+        let current_errors_parse = cg(&ERRORS, ERR_PARSE);
+        let current_errors_stream = cg(&ERRORS, ERR_STREAM);
+        let current_errors_other = cg(&ERRORS, ERR_OTHER);
 
         // Calculate deltas for this window
         let window_requests_sent = current_requests_sent - previous_snapshot.requests_sent;
@@ -186,10 +192,10 @@ pub async fn periodic_stats(config: Config, warmup_complete: Arc<Notify>) {
         );
 
         // Conversation progress (cumulative, not windowed)
-        let conversations_sent = CONVERSATIONS_SENT.value();
+        let conversations_sent = cg(&CONVERSATIONS, CONV_SENT);
         if conversations_sent > 0 {
-            let conversations_success = CONVERSATIONS_SUCCESS.value();
-            let turns = TURNS_TOTAL.value();
+            let conversations_success = cg(&CONVERSATIONS, CONV_SUCCESS);
+            let turns = TURNS.value();
             output!(
                 "Conversations: {} sent, {} complete, {} turns",
                 conversations_sent,

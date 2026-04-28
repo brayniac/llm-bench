@@ -210,19 +210,21 @@ impl ReportBuilder {
         };
 
         use crate::metrics::{
-            ERRORS_CONNECTION, ERRORS_HTTP_4XX, ERRORS_HTTP_5XX, ERRORS_OTHER, ERRORS_STREAM,
-            REQUESTS_CANCELED, REQUESTS_ERROR, REQUESTS_RETRIED, REQUESTS_SENT, REQUESTS_SUCCESS,
-            REQUESTS_TIMEOUT, TOKENS_INPUT, TOKENS_OUTPUT_CONTENT, TOKENS_OUTPUT_REASONING,
+            ERR_CONNECTION, ERR_HTTP_4XX, ERR_HTTP_5XX, ERR_OTHER, ERR_STREAM, ERRORS,
+            REQ_CANCELED, REQ_ERROR, REQ_RETRIED, REQ_SENT, REQ_SUCCESS, REQ_TIMEOUT, REQUESTS,
+            TOK_INPUT, TOK_OUTPUT_CONTENT, TOK_OUTPUT_REASONING, TOKENS,
         };
 
-        let requests_sent = REQUESTS_SENT.value();
-        let requests_success = REQUESTS_SUCCESS.value();
-        let requests_error = REQUESTS_ERROR.value();
-        let requests_timeout = REQUESTS_TIMEOUT.value();
-        let requests_canceled = REQUESTS_CANCELED.value();
+        let cg = |group: &metriken::CounterGroup, idx: usize| group.value(idx).unwrap_or(0);
 
-        let input_tokens = TOKENS_INPUT.value();
-        let output_tokens = TOKENS_OUTPUT_REASONING.value() + TOKENS_OUTPUT_CONTENT.value();
+        let requests_sent = cg(&REQUESTS, REQ_SENT);
+        let requests_success = cg(&REQUESTS, REQ_SUCCESS);
+        let requests_error = cg(&REQUESTS, REQ_ERROR);
+        let requests_timeout = cg(&REQUESTS, REQ_TIMEOUT);
+        let requests_canceled = cg(&REQUESTS, REQ_CANCELED);
+
+        let input_tokens = cg(&TOKENS, TOK_INPUT);
+        let output_tokens = cg(&TOKENS, TOK_OUTPUT_REASONING) + cg(&TOKENS, TOK_OUTPUT_CONTENT);
 
         let duration_secs = duration.as_secs_f64();
 
@@ -268,7 +270,7 @@ impl ReportBuilder {
             }
         };
 
-        let retries = REQUESTS_RETRIED.value();
+        let retries = cg(&REQUESTS, REQ_RETRIED);
 
         // Completed = received a complete response (success or server error)
         let requests_completed = requests_success + requests_error;
@@ -301,11 +303,11 @@ impl ReportBuilder {
         // Build error breakdown
         let errors = ErrorBreakdown {
             errors_timeout: requests_timeout,
-            errors_connection: ERRORS_CONNECTION.value(),
-            errors_http_4xx: ERRORS_HTTP_4XX.value(),
-            errors_http_5xx: ERRORS_HTTP_5XX.value(),
-            errors_stream: ERRORS_STREAM.value(),
-            errors_other: ERRORS_OTHER.value(),
+            errors_connection: cg(&ERRORS, ERR_CONNECTION),
+            errors_http_4xx: cg(&ERRORS, ERR_HTTP_4XX),
+            errors_http_5xx: cg(&ERRORS, ERR_HTTP_5XX),
+            errors_stream: cg(&ERRORS, ERR_STREAM),
+            errors_other: cg(&ERRORS, ERR_OTHER),
         };
 
         // Get latency percentiles
@@ -554,18 +556,17 @@ impl ReportBuilder {
 
     fn build_conversation_stats(&self) -> Option<ConversationStats> {
         use crate::metrics::{
-            CONVERSATION_LATENCY, CONVERSATIONS_FAILED, CONVERSATIONS_SENT, CONVERSATIONS_SUCCESS,
-            TURNS_TOTAL,
+            CONV_FAILED, CONV_SENT, CONV_SUCCESS, CONVERSATION_LATENCY, CONVERSATIONS, TURNS,
         };
 
-        let sent = CONVERSATIONS_SENT.value();
+        let sent = CONVERSATIONS.value(CONV_SENT).unwrap_or(0);
         if sent == 0 {
             return None;
         }
 
-        let success = CONVERSATIONS_SUCCESS.value();
-        let failed = CONVERSATIONS_FAILED.value();
-        let turns = TURNS_TOTAL.value();
+        let success = CONVERSATIONS.value(CONV_SUCCESS).unwrap_or(0);
+        let failed = CONVERSATIONS.value(CONV_FAILED).unwrap_or(0);
+        let turns = TURNS.value();
         let completed = success + failed;
         let avg_turns = if completed > 0 {
             turns as f64 / completed as f64
