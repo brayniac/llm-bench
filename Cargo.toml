@@ -62,3 +62,12 @@ assets = [
     { source = "target/release/llm-perf", dest = "/usr/bin/llm-perf", mode = "0755" },
     { source = "examples/config.example.toml", dest = "/etc/llm-perf/config.toml.example", mode = "0644", config = true },
 ]
+
+# RPM metadata for spec template
+[package.metadata.rpm]
+name = "llm-perf"
+version = "@VERSION@"
+release = "@RELEASE@"
+summary = "A benchmarking tool for OpenAI-compatible LLM servers"
+license = "MIT OR Apache-2.0"
+arch = "@ARCH@"
