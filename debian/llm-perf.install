@@ -1,2 +1,2 @@
-target/release/llm-perf usr/bin/
+debian/tmp/bin/llm-perf usr/bin/
 examples/config.example.toml etc/llm-perf/
