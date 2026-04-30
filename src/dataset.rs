@@ -385,15 +385,15 @@ async fn download_gpt4_tooluse() -> Result<PathBuf> {
                         let mut conversations = vec![];
                         for j in 0..messages.len() {
                             let msg_str = messages.value(j);
-                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(msg_str) {
-                                if let Some(role) = msg.get("role").and_then(|r| r.as_str()) {
-                                    let content =
-                                        msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    conversations.push(serde_json::json!({
-                                        "from": role,
-                                        "value": content
-                                    }));
-                                }
+                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(msg_str)
+                                && let Some(role) = msg.get("role").and_then(|r| r.as_str())
+                            {
+                                let content =
+                                    msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                conversations.push(serde_json::json!({
+                                    "from": role,
+                                    "value": content
+                                }));
                             }
                         }
 
@@ -503,15 +503,15 @@ async fn download_claude_distill() -> Result<PathBuf> {
                         let mut conversations = vec![];
                         for j in 0..messages.len() {
                             let msg_str = messages.value(j);
-                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(msg_str) {
-                                if let Some(role) = msg.get("role").and_then(|r| r.as_str()) {
-                                    let content =
-                                        msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    conversations.push(serde_json::json!({
-                                        "from": role,
-                                        "value": content
-                                    }));
-                                }
+                            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(msg_str)
+                                && let Some(role) = msg.get("role").and_then(|r| r.as_str())
+                            {
+                                let content =
+                                    msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                                conversations.push(serde_json::json!({
+                                    "from": role,
+                                    "value": content
+                                }));
                             }
                         }
 
