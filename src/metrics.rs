@@ -1,6 +1,6 @@
 use metriken::{AtomicHistogram, Counter, CounterGroup, Gauge, HistogramGroup, LazyGauge, metric};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy)]
@@ -32,6 +32,30 @@ pub enum Phase {
 
 // Global running flag for background tasks
 pub static RUNNING: AtomicBool = AtomicBool::new(false);
+
+impl Metrics {
+    /// Gets the RUNNING flag value
+    /// This provides a simple read-only interface to check if the system is running
+    ///
+    /// # Returns
+    ///
+    /// Returns true if the benchmark is currently running, false otherwise
+    #[inline]
+    pub fn is_running() -> bool {
+        RUNNING.load(Ordering::Relaxed)
+    }
+}
+
+/// Gets the RUNNING flag value (non-const version)
+/// This provides a simple read-only interface to check if the system is running
+///
+/// # Returns
+///
+/// Returns true if the benchmark is currently running, false otherwise
+#[inline]
+pub fn is_running() -> bool {
+    RUNNING.load(Ordering::Relaxed)
+}
 
 // Request counters — indexed by status
 pub const REQ_SENT: usize = 0;
