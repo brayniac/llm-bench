@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.13] - 2026-04-30
+
+### Bug Fixes
+
+- Fix Debian packaging for native package format (remove invalid Debian revision)
+
+### Infrastructure
+
+- Add gen-changelog.sh to auto-generate changelog from Cargo.toml
+- Update package.sh to generate changelog before dpkg-source build
+
 ## [0.1.12] - 2026-04-30
 
 ### Features
