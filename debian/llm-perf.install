@@ -1,0 +1,2 @@
+target/release/llm-perf usr/bin/
+examples/config.example.toml etc/llm-perf/

@@ -1,0 +1,12 @@
+[Unit]
+Description=llm-perf-exporter - Prometheus Exporter for LLM Benchmarks
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/llm-perf exporter
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

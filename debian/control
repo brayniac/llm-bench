@@ -1,0 +1,16 @@
+Source: llm-perf
+Section: net
+Priority: optional
+Maintainer: Brian Martin <brayniac@gmail.com>
+Standards-Version: 4.6.2
+Build-Depends:
+    debhelper (>= 11),
+    pkg-config,
+    libelf-dev,
+    libelf-dev:native,
+    clang:native
+
+Package: llm-perf
+Architecture: any
+Description: A benchmarking tool for OpenAI-compatible LLM servers
+Depends: ${shlibs:Depends}, ${misc:Depends}
