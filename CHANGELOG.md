@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.14] - 2026-04-30
+
+### Infrastructure
+
+- Add cross-compile.mk and rustc-architecture.mk for Debian cross-compilation support
+
 ## [0.1.13] - 2026-04-30
 
 ### Bug Fixes
