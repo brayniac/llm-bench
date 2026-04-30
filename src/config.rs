@@ -77,6 +77,11 @@ pub struct InputConfig {
     pub seed: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sample_size: Option<usize>,
+    /// System prompt to use for conversations. If set, will override the system message
+    /// in the dataset (if present) or prepend to the first user message. Useful for
+    /// agentic workloads where you want to test with specific system instructions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

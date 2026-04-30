@@ -265,6 +265,12 @@ pub async fn periodic_stats(config: Config, warmup_complete: Arc<Notify>) {
         let current_request = REQUEST_LATENCY.load();
 
         // TPOT percentiles for this window (using delta)
+        // wrapping_sub is safe because:
+        // 1. Histograms only increment (additive operations)
+        // 2. No individual bucket will double-wrap between samples
+        //    - With 64-bit counters, this would require ~1.8e19 events
+        //    - At 1M events/sec, this would take ~585 million years
+        // 3. Each histogram bucket value in 'current' >= corresponding bucket in 'previous'
         if let (Some(current), Some(previous)) = (&current_tpot, &previous_snapshot.tpot_histogram)
         {
             if let Ok(delta) = current.wrapping_sub(previous)
@@ -306,6 +312,12 @@ pub async fn periodic_stats(config: Config, warmup_complete: Arc<Notify>) {
         }
 
         // Request latency percentiles for this window (using delta)
+        // wrapping_sub is safe because:
+        // 1. Histograms only increment (additive operations)
+        // 2. No individual bucket will double-wrap between samples
+        //    - With 64-bit counters, this would require ~1.8e19 events
+        //    - At 1M events/sec, this would take ~585 million years
+        // 3. Each histogram bucket value in 'current' >= corresponding bucket in 'previous'
         if let (Some(current), Some(previous)) =
             (&current_request, &previous_snapshot.request_histogram)
         {

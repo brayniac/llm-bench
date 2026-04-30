@@ -107,6 +107,9 @@ total_requests = 100
 # Known dataset names (downloaded and cached on first use):
 #   "openorca"  — Open-Orca/OpenOrca GPT-4 subset (~1 GB download, 1M single-turn prompts)
 #   "sharegpt"  — ShareGPT Vicuna conversations (~670 MB download, ~90K multi-turn conversations)
+#   "toolbench" — THUDM/ToolBench (~300 MB, tool-use trajectories)
+#   "gpt4-tool-use" — openai/gpt-4-tool-use-v1.0 (~200 MB, GPT-4 tool calling examples)
+#   "claude-distill" — Kassadin88/Claude-Distills (~800 MB, Claude Sonnet/Opus distillations with system prompts)
 #
 # Custom JSONL formats:
 #   Single-turn: {"prompt": "your prompt here", "max_tokens": 100}
@@ -127,6 +130,12 @@ file = "examples/prompts/openorca-10000.jsonl"
 
 # Limit to first N prompts from file (applied before shuffling, useful for quick tests)
 # sample_size = 50
+
+# System Prompt Override (Optional)
+# Override the system prompt for all conversations in the input file.
+# This is useful for testing agentic workloads with specific system instructions.
+# If set, it replaces any system prompt in the dataset.
+# system_prompt = "You are a helpful AI assistant specialized in coding tasks."
 
 # =============================================================================
 # Output Configuration
@@ -269,9 +278,12 @@ level = "info"
 # Use a ShareGPT-format JSONL file to test realistic multi-turn chat performance.
 # Each conversation runs its turns sequentially through one worker, measuring
 # TTFT growth with conversation depth and prefix caching effectiveness.
+#
+# For agentic workloads with specific system instructions, use the claude-distill
+# dataset (automatically downloaded from HuggingFace) and override the system prompt:
 # [input]
-# file = "conversations.jsonl"  # ShareGPT format
-# shuffle = true
+# file = "claude-distill"  # Auto-downloads Claude Sonnet/Opus distillations
+# system_prompt = "You are Claude, a helpful AI assistant. Follow these guidelines:..."
 # [load]
 # concurrent_requests = 20  # 20 concurrent conversations
 # duration_seconds = 120
