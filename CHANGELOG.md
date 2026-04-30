@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.12] - 2026-04-30
+
+### Features
+
+- Add RPM packaging support for Amazon Linux 2023 (#54)
+- Add system prompt override and new datasets (#53)
+
+### Infrastructure
+
+- Update CI workflow with Docker-based deb/rpm builds
+- Add RPM spec template for proper header generation
+- Implement Debian packaging with Docker-based build scripts
+
 ## [0.1.11] - 2026-04-28
 
 ### Features
@@ -78,8 +91,6 @@ All notable changes to this project will be documented in this file.
 - Add /release skill for creating release PRs
 - Add mmlu-pro binary to deb and rpm packaging
 - Fix tag-release workflow to match squash-merge commit message format
-
-## [Unreleased]
 
 ## [0.1.10] - 2026-04-15
 
