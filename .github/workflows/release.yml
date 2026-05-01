@@ -161,7 +161,7 @@ jobs:
             mv ~/rpmbuild/RPMS/*/*.rpm "$rpm"
 
             # Cleanup for next iteration
-            rm -rf ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+            rm -rf ~/rpmbuild
           done
 
           # Final verification
