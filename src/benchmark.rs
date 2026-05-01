@@ -47,21 +47,6 @@ pub struct Conversation {
     pub max_tokens: Option<u32>,
 }
 
-impl Conversation {
-    /// Returns a new conversation with the given system prompt override.
-    /// If override is Some, it replaces the conversation's system prompt.
-    /// If override is None, returns the original conversation.
-    fn with_system_prompt_override(self, override_prompt: Option<String>) -> Self {
-        match override_prompt {
-            Some(prompt) => Conversation {
-                system_prompt: Some(prompt),
-                ..self
-            },
-            None => self,
-        }
-    }
-}
-
 /// Raw ShareGPT format for deserialization
 #[derive(Debug, Deserialize)]
 struct ShareGPTEntry {
@@ -110,6 +95,7 @@ pub struct BenchmarkRunner {
     config: Config,
     workloads: Arc<Vec<Workload>>, // Wrapped in Arc to avoid cloning
     tokenizer: Arc<Tokenizer>,
+    system_prompt: Arc<Option<String>>, // Wrapped in Arc to avoid per-request cloning
 }
 
 impl BenchmarkRunner {
@@ -225,11 +211,13 @@ impl BenchmarkRunner {
             info!("Loaded {} prompts", workloads.len());
         }
 
+       let system_prompt = Arc::new(config.input.system_prompt.clone());
         Ok(Self {
             client: Arc::new(client),
             config,
             workloads: Arc::new(workloads), // Wrap in Arc
             tokenizer: Arc::new(tokenizer),
+            system_prompt, // Arc-wrapped to avoid per-request cloning
         })
     }
 
@@ -460,23 +448,25 @@ impl BenchmarkRunner {
 
             // Run warmup requests first
             for _ in 0..warmup_count {
+                let workloads = Arc::clone(&self.workloads);
                 let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                let workload = self.workloads[idx % self.workloads.len()].clone();
+                let workload_idx = idx % workloads.len();
                 let client = Arc::clone(&self.client);
                 let tokenizer = Arc::clone(&self.tokenizer);
                 let semaphore = Arc::clone(&semaphore);
                 let warmup_completed = Arc::clone(&warmup_completed);
 
                 // Capture system_prompt for this closure
-                let system_prompt = self.config.input.system_prompt.clone();
+                let system_prompt = Arc::clone(&self.system_prompt);
 
                 let handle = tokio::spawn(async move {
+                    let workload = &workloads[workload_idx];
                     let _permit = semaphore
                         .acquire()
                         .await
                         .expect("semaphore should never be closed");
                     let result = Self::execute_workload(
-                        system_prompt.clone(),
+                        &system_prompt,
                         client,
                         tokenizer,
                         workload,
@@ -504,23 +494,25 @@ impl BenchmarkRunner {
 
             // Run main test requests
             for _ in 0..total {
+                let workloads = Arc::clone(&self.workloads);
                 let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                let workload = self.workloads[idx % self.workloads.len()].clone();
+                let workload_idx = idx % workloads.len();
                 let client = Arc::clone(&self.client);
                 let tokenizer = Arc::clone(&self.tokenizer);
                 let semaphore = Arc::clone(&semaphore);
                 let completed = Arc::clone(&completed);
 
                 // Capture system_prompt for this closure
-                let system_prompt = self.config.input.system_prompt.clone();
+                let system_prompt = Arc::clone(&self.system_prompt);
 
                 let handle = tokio::spawn(async move {
+                    let workload = &workloads[workload_idx];
                     let _permit = semaphore
                         .acquire()
                         .await
                         .expect("semaphore should never be closed");
                     let result = Self::execute_workload(
-                        system_prompt,
+                        &system_prompt,
                         client,
                         tokenizer,
                         workload,
@@ -552,7 +544,7 @@ impl BenchmarkRunner {
                     let workloads = self.workloads.clone();
 
                     // Capture system_prompt for this closure
-                    let system_prompt = self.config.input.system_prompt.clone();
+                    let system_prompt = Arc::clone(&self.system_prompt);
 
                     let handle = tokio::spawn(async move {
                         while Instant::now() < warmup_deadline {
@@ -562,10 +554,10 @@ impl BenchmarkRunner {
                             };
 
                             let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                            let workload = workloads[idx % workloads.len()].clone();
+                            let workload = &workloads[idx % workloads.len()];
 
                             let _ = Self::execute_workload(
-                                system_prompt.clone(),
+                                &system_prompt,
                                 client.clone(),
                                 tokenizer.clone(),
                                 workload,
@@ -605,10 +597,10 @@ impl BenchmarkRunner {
                 let completed = Arc::clone(&completed);
                 let should_stop = Arc::clone(&should_stop);
                 let prompt_index = Arc::clone(&prompt_index);
-                let workloads = self.workloads.clone();
+                let workloads = Arc::clone(&self.workloads);
 
                 // Capture system_prompt for this closure
-                let system_prompt = self.config.input.system_prompt.clone();
+                let system_prompt = Arc::clone(&self.system_prompt);
 
                 let handle = tokio::spawn(async move {
                     while !should_stop.load(Ordering::Relaxed) {
@@ -630,7 +622,7 @@ impl BenchmarkRunner {
                         }
 
                         let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                        let workload = workloads[idx % workloads.len()].clone();
+                        let workload = &workloads[idx % workloads.len()];
 
                         // Calculate remaining time until deadline
                         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -640,7 +632,7 @@ impl BenchmarkRunner {
 
                         // Execute workload with timeout based on remaining time
                         let request_future = Self::execute_workload(
-                            system_prompt.clone(),
+                            &system_prompt,
                             client.clone(),
                             tokenizer.clone(),
                             workload,
@@ -733,11 +725,11 @@ impl BenchmarkRunner {
                 let client = Arc::clone(&self.client);
                 let tokenizer = Arc::clone(&self.tokenizer);
                 let semaphore = Arc::clone(&warmup_semaphore);
-                let workloads = self.workloads.clone();
+                let workloads = Arc::clone(&self.workloads);
                 let prompt_index_clone = Arc::new(AtomicUsize::new(0));
 
                 // Capture system_prompt for this closure
-                let system_prompt = self.config.input.system_prompt.clone();
+                let system_prompt = Arc::clone(&self.system_prompt);
 
                 let handle = tokio::spawn(async move {
                     while Instant::now() < warmup_deadline {
@@ -746,9 +738,9 @@ impl BenchmarkRunner {
                             Err(_) => break,
                         };
                         let idx = prompt_index_clone.fetch_add(1, Ordering::Relaxed);
-                        let workload = workloads[idx % workloads.len()].clone();
+                        let workload = &workloads[idx % workloads.len()];
                         let _ = Self::execute_workload(
-                            system_prompt.clone(),
+                            &system_prompt,
                             client.clone(),
                             tokenizer.clone(),
                             workload,
@@ -789,9 +781,9 @@ impl BenchmarkRunner {
             let semaphore = Arc::clone(&semaphore);
             let should_stop = Arc::clone(&should_stop);
             let prompt_index = Arc::clone(&prompt_index);
-            let workloads = self.workloads.clone();
-            // Capture system_prompt for this closure (clone for each iteration)
-            let system_prompt = self.config.input.system_prompt.clone();
+            let workloads = Arc::clone(&self.workloads);
+            // Capture system_prompt for this closure
+            let system_prompt = Arc::clone(&self.system_prompt);
 
             handles.push(tokio::spawn(async move {
                 loop {
@@ -810,9 +802,9 @@ impl BenchmarkRunner {
                     }
 
                     let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                    let workload = workloads[idx % workloads.len()].clone();
+                    let workload = &workloads[idx % workloads.len()];
                     let _ = Self::execute_workload(
-                        system_prompt.clone(),
+                        &system_prompt,
                         client.clone(),
                         tokenizer.clone(),
                         workload,
@@ -913,31 +905,33 @@ impl BenchmarkRunner {
         let mut test_start = Instant::now();
 
         // Capture system_prompt for warmup
-        let system_prompt = self.config.input.system_prompt.clone();
+        let system_prompt = Arc::clone(&self.system_prompt);
 
         // Run warmup phase if configured
         if warmup_count > 0 {
             for _ in 0..warmup_count {
+                let workloads = Arc::clone(&self.workloads);
+                let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
+                let workload_idx = idx % workloads.len();
                 tokio::time::sleep(distribution.next_delay()).await;
 
-                let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                let workload = self.workloads[idx % self.workloads.len()].clone();
                 let client = Arc::clone(&self.client);
                 let tokenizer = Arc::clone(&self.tokenizer);
                 let semaphore = Arc::clone(&semaphore);
                 let warmup_completed = Arc::clone(&warmup_completed);
-                let system_prompt_clone = system_prompt.clone();
+                let system_prompt_clone = Arc::clone(&system_prompt);
 
                 let handle = tokio::spawn(async move {
+                    let workload = &workloads[workload_idx];
                     let _permit = semaphore
                         .acquire()
                         .await
                         .expect("semaphore should never be closed");
                     let result = Self::execute_workload(
-                        system_prompt_clone,
+                        &system_prompt_clone,
                         client.clone(),
                         tokenizer.clone(),
-                        workload.clone(),
+                        workload,
                         idx,
                         true,
                     )
@@ -960,29 +954,31 @@ impl BenchmarkRunner {
             test_start = Instant::now();
         } else if let Some(warmup_dur) = warmup_duration {
             let warmup_deadline = Instant::now() + warmup_dur;
-            let system_prompt_clone = system_prompt.clone();
+            let system_prompt_clone = Arc::clone(&system_prompt);
 
             while Instant::now() < warmup_deadline {
+                let workloads = Arc::clone(&self.workloads);
+                let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
+                let workload_idx = idx % workloads.len();
                 tokio::time::sleep(distribution.next_delay()).await;
 
-                let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-                let workload = self.workloads[idx % self.workloads.len()].clone();
                 let client = Arc::clone(&self.client);
                 let tokenizer = Arc::clone(&self.tokenizer);
                 let semaphore = Arc::clone(&semaphore);
                 let warmup_completed = Arc::clone(&warmup_completed);
-                let system_prompt_closure = system_prompt_clone.clone();
+                let system_prompt_closure = Arc::clone(&system_prompt_clone);
 
                 let handle = tokio::spawn(async move {
+                    let workload = &workloads[workload_idx];
                     let _permit = semaphore
                         .acquire()
                         .await
                         .expect("semaphore should never be closed");
                     let result = Self::execute_workload(
-                        system_prompt_closure,
+                        &system_prompt_closure,
                         client.clone(),
                         tokenizer.clone(),
-                        workload.clone(),
+                        workload,
                         idx,
                         true,
                     )
@@ -1009,7 +1005,7 @@ impl BenchmarkRunner {
         let deadline = duration_limit.map(|d| test_start + d);
 
         // Capture system_prompt for the main test loop
-        let system_prompt = self.config.input.system_prompt.clone();
+        let system_prompt = Arc::clone(&self.system_prompt);
 
         // Main test loop
         loop {
@@ -1037,16 +1033,18 @@ impl BenchmarkRunner {
             }
 
             // Spawn request
+            let workloads = Arc::clone(&self.workloads);
             let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
-            let workload = self.workloads[idx % self.workloads.len()].clone();
+            let workload_idx = idx % workloads.len();
             let client = Arc::clone(&self.client);
             let tokenizer = Arc::clone(&self.tokenizer);
             let semaphore = Arc::clone(&semaphore);
             let completed = Arc::clone(&completed);
             let request_timeout = remaining;
-            let system_prompt_for_closure = system_prompt.clone();
+            let system_prompt_for_closure = Arc::clone(&system_prompt);
 
             let handle = tokio::spawn(async move {
+                let workload = &workloads[workload_idx];
                 let _permit = semaphore
                     .acquire()
                     .await
@@ -1054,10 +1052,10 @@ impl BenchmarkRunner {
                 if let Some(timeout_duration) = request_timeout {
                     // Execute with timeout based on remaining time
                     let request_future = Self::execute_workload(
-                        system_prompt_for_closure.clone(),
+                        &system_prompt_for_closure,
                         client.clone(),
                         tokenizer.clone(),
-                        workload.clone(),
+                        workload,
                         idx,
                         false,
                     );
@@ -1077,10 +1075,10 @@ impl BenchmarkRunner {
                 } else {
                     // No deadline, execute normally
                     let result = Self::execute_workload(
-                        system_prompt_for_closure.clone(),
+                        &system_prompt_for_closure,
                         client.clone(),
                         tokenizer.clone(),
-                        workload.clone(),
+                        workload,
                         idx,
                         false,
                     )
@@ -1150,10 +1148,10 @@ impl BenchmarkRunner {
     }
 
     async fn execute_workload(
-        system_prompt: Option<String>,
+        system_prompt: &Option<String>,
         client: Arc<OpenAIClient>,
         tokenizer: Arc<Tokenizer>,
-        workload: Workload,
+        workload: &Workload,
         index: usize,
         is_warmup: bool,
     ) -> Result<()> {
@@ -1162,7 +1160,10 @@ impl BenchmarkRunner {
                 Self::execute_request(client, tokenizer, prompt, index, is_warmup).await
             }
             Workload::MultiTurn(conversation) => {
-                let conversation = conversation.with_system_prompt_override(system_prompt);
+                let conversation = Conversation {
+                    system_prompt: system_prompt.clone(),
+                    ..conversation.clone()
+                };
                 Self::execute_conversation(client, tokenizer, conversation, index, is_warmup).await
             }
         }
@@ -1370,7 +1371,7 @@ impl BenchmarkRunner {
     async fn execute_request(
         client: Arc<OpenAIClient>,
         tokenizer: Arc<Tokenizer>,
-        prompt: Prompt,
+        prompt: &Prompt,
         index: usize,
         is_warmup: bool,
     ) -> Result<()> {
