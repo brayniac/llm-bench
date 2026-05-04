@@ -216,6 +216,7 @@ pub async fn run_evaluation(
         retry_initial_delay_ms: 1000,
         retry_max_delay_ms: 30000,
         pool_size: config.load.concurrent_requests,
+        extra_body: config.endpoint.extra_body.clone(),
     };
 
     let client = Arc::new(OpenAIClient::new(client_config)?);

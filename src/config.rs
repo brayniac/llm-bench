@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +41,10 @@ pub struct EndpointConfig {
     pub health_check_timeout: u64, // Total time to wait for server readiness in seconds (0 = disabled)
     #[serde(default = "default_health_check_interval")]
     pub health_check_interval: u64, // Interval between readiness check retries in seconds
+    /// Extra fields merged into every request body. Values of `"__seq_u32__"` are
+    /// replaced with a per-client monotonically increasing sequence number (e.g. for bootstrap_room).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_body: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

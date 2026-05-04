@@ -2,6 +2,9 @@ use anyhow::Result;
 use rand::Rng;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -38,6 +41,8 @@ pub struct OpenAIClient {
     max_retries: u32,
     retry_initial_delay_ms: u64,
     retry_max_delay_ms: u64,
+    extra_body: Option<HashMap<String, serde_json::Value>>,
+    seq_counter: Arc<AtomicU32>,
 }
 
 // Request types for OpenAI Chat Completions API
@@ -204,6 +209,9 @@ pub struct ClientConfig {
     pub retry_max_delay_ms: u64,
     /// Connection pool size (should match concurrency for optimal performance)
     pub pool_size: usize,
+    /// Extra fields merged into every request body. Values of `"__seq_u32__"` are
+    /// replaced with a per-client monotonically increasing sequence number.
+    pub extra_body: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl OpenAIClient {
@@ -255,6 +263,8 @@ impl OpenAIClient {
             max_retries: config.max_retries,
             retry_initial_delay_ms: config.retry_initial_delay_ms,
             retry_max_delay_ms: config.retry_max_delay_ms,
+            extra_body: config.extra_body,
+            seq_counter: Arc::new(AtomicU32::new(0)),
         })
     }
 
@@ -302,7 +312,8 @@ impl OpenAIClient {
     ) -> Result<ChatCompletionResponse> {
         let url = format!("{}/chat/completions", self.base_url);
 
-        let mut req = self.client.post(&url).json(&request);
+        let body = self.apply_extra_body(&request);
+        let mut req = self.client.post(&url).json(&body);
 
         if let Some(api_key) = &self.api_key {
             req = req.header("Authorization", format!("Bearer {}", api_key));
@@ -454,10 +465,11 @@ impl OpenAIClient {
 
         let url = format!("{}/chat/completions", self.base_url);
 
+        let body = self.apply_extra_body(&request);
         let mut req = self
             .client
             .post(&url)
-            .json(&request)
+            .json(&body)
             .header("Connection", "keep-alive"); // Ensure HTTP/1.1 keep-alive
 
         if let Some(api_key) = &self.api_key {
@@ -554,6 +566,27 @@ impl OpenAIClient {
             let err_str = error.to_string().to_lowercase();
             err_str.contains("timeout") || err_str.contains("connection")
         }
+    }
+
+    /// Merge extra_body into a serialized request value, replacing `"__seq_u32__"` sentinels
+    /// with a monotonically increasing per-client sequence number.
+    fn apply_extra_body(&self, request: &impl Serialize) -> serde_json::Value {
+        let mut value = serde_json::to_value(request).expect("request serialization failed");
+        if let Some(extra) = &self.extra_body {
+            if let serde_json::Value::Object(ref mut map) = value {
+                for (k, v) in extra {
+                    let resolved = if v == "__seq_u32__" {
+                        serde_json::Value::Number(
+                            self.seq_counter.fetch_add(1, Ordering::Relaxed).into(),
+                        )
+                    } else {
+                        v.clone()
+                    };
+                    map.insert(k.clone(), resolved);
+                }
+            }
+        }
+        value
     }
 
     /// Calculate exponential backoff delay with jitter

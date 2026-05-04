@@ -330,6 +330,7 @@ async fn run_logprobs_collection(
         retry_initial_delay_ms: config.endpoint.retry_initial_delay_ms,
         retry_max_delay_ms: config.endpoint.retry_max_delay_ms,
         pool_size: 1,
+        extra_body: config.endpoint.extra_body.clone(),
     })?;
 
     // Load prompts

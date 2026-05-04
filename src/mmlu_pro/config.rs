@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -22,6 +23,8 @@ pub struct EndpointConfig {
     pub api_key: Option<String>,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_body: Option<HashMap<String, serde_json::Value>>,
 }
 
 fn default_timeout() -> u64 {
