@@ -597,10 +597,11 @@ impl BenchmarkRunner {
                     warmup_handles.push(handle);
                 }
 
-                // Wait for warmup to complete
+                // Wait for warmup to complete, then cancel any in-flight requests
                 sleep(warmup_dur).await;
                 for handle in warmup_handles {
-                    let _ = handle.await?;
+                    handle.abort();
+                    let _ = handle.await;
                 }
 
                 info!("Warmup complete, starting main test");
@@ -785,6 +786,7 @@ impl BenchmarkRunner {
 
             sleep(warmup_dur).await;
             for handle in warmup_handles {
+                handle.abort();
                 let _ = handle.await;
             }
             info!("Warmup complete, starting saturation search");
@@ -1024,9 +1026,10 @@ impl BenchmarkRunner {
                 handles.push(handle);
             }
 
-            // Wait for warmup requests to complete
+            // Cancel any in-flight warmup requests past the deadline
             for handle in handles.drain(..) {
-                let _ = handle.await?;
+                handle.abort();
+                let _ = handle.await;
             }
 
             info!("Warmup complete, starting main test");
