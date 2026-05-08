@@ -15,7 +15,7 @@ use tokio::time::{sleep, timeout};
 use crate::client::{ClientError, Message, OpenAIClient};
 use crate::config::{Config, resolve_max_tokens};
 use crate::distribution::RequestDistribution;
-use crate::metrics::{ErrorType, Metrics, RequestStatus};
+use crate::metrics::{ErrorType, InflightGuard, Metrics, RequestStatus};
 use crate::report::ReportBuilder;
 use crate::saturation::SaturationResults;
 use crate::tokenizer::Tokenizer;
@@ -673,9 +673,9 @@ impl BenchmarkRunner {
                                 completed.fetch_add(1, Ordering::Relaxed);
                             }
                             Err(_) => {
-                                // Request cancelled due to test ending
+                                // Future is dropped on timeout — InflightGuard's
+                                // Drop records Canceled and decrements the gauge.
                                 debug!("Request {} cancelled due to test duration limit", idx);
-                                Metrics::record_request_complete(RequestStatus::Canceled);
                             }
                         }
                     }
@@ -1106,9 +1106,9 @@ impl BenchmarkRunner {
                             result
                         }
                         Err(_) => {
-                            // Request cancelled due to test ending
+                            // Future is dropped on timeout — InflightGuard's
+                            // Drop records Canceled and decrements the gauge.
                             debug!("Request {} cancelled due to test duration limit", idx);
-                            Metrics::record_request_complete(RequestStatus::Canceled);
                             Ok(())
                         }
                     }
@@ -1276,8 +1276,8 @@ impl BenchmarkRunner {
 
             let request_start = Instant::now();
 
+            let guard = InflightGuard::new(!is_warmup);
             if !is_warmup {
-                Metrics::record_request_sent();
                 Metrics::record_turn();
             }
 
@@ -1289,6 +1289,7 @@ impl BenchmarkRunner {
                     // Consume stream, collect response content for conversation history
                     let mut response_content = String::with_capacity(1024);
 
+                    let mut stream_err = None;
                     loop {
                         match stream.next_chunk().await {
                             Ok(Some(chunk)) => {
@@ -1301,12 +1302,14 @@ impl BenchmarkRunner {
                             }
                             Ok(None) => break, // Stream ended normally
                             Err(e) => {
-                                Metrics::record_request_complete(RequestStatus::Failed(
-                                    ErrorType::Stream,
-                                ));
-                                return Err(e);
+                                stream_err = Some(e);
+                                break;
                             }
                         }
+                    }
+                    if let Some(e) = stream_err {
+                        guard.complete(RequestStatus::Failed(ErrorType::Stream));
+                        return Err(e);
                     }
 
                     // Use server-reported token counts when available
@@ -1370,9 +1373,9 @@ impl BenchmarkRunner {
                                 / (stream.content_tokens() as u64 - 1);
                             Metrics::record_tpot(Duration::from_nanos(tpot_ns), Phase::Content);
                         }
-
-                        Metrics::record_request_complete(RequestStatus::Success);
                     }
+
+                    guard.complete(RequestStatus::Success);
 
                     // Add assistant response to conversation history for next turn
                     messages.push(Message {
@@ -1382,28 +1385,25 @@ impl BenchmarkRunner {
                 }
                 Err(e) => {
                     debug!("Conversation {} turn {} failed: {}", index, turn_idx, e);
-                    if !is_warmup {
-                        let error_type = if let Some(client_error) = e.downcast_ref::<ClientError>()
-                        {
-                            match client_error {
-                                ClientError::Connection(_) => ErrorType::Connection,
-                                ClientError::Http4xx { status, .. } => ErrorType::Http4xx(*status),
-                                ClientError::Http5xx { status, .. } => ErrorType::Http5xx(*status),
-                                ClientError::Parse(_) => ErrorType::Parse,
-                                ClientError::Timeout(_) => ErrorType::Timeout,
-                                ClientError::StreamError { .. } => ErrorType::Stream,
-                                ClientError::Other(_) => ErrorType::Other,
-                            }
-                        } else if e.to_string().contains("timeout") {
-                            ErrorType::Timeout
-                        } else if e.to_string().contains("connection") {
-                            ErrorType::Connection
-                        } else {
-                            ErrorType::Other
-                        };
+                    let error_type = if let Some(client_error) = e.downcast_ref::<ClientError>() {
+                        match client_error {
+                            ClientError::Connection(_) => ErrorType::Connection,
+                            ClientError::Http4xx { status, .. } => ErrorType::Http4xx(*status),
+                            ClientError::Http5xx { status, .. } => ErrorType::Http5xx(*status),
+                            ClientError::Parse(_) => ErrorType::Parse,
+                            ClientError::Timeout(_) => ErrorType::Timeout,
+                            ClientError::StreamError { .. } => ErrorType::Stream,
+                            ClientError::Other(_) => ErrorType::Other,
+                        }
+                    } else if e.to_string().contains("timeout") {
+                        ErrorType::Timeout
+                    } else if e.to_string().contains("connection") {
+                        ErrorType::Connection
+                    } else {
+                        ErrorType::Other
+                    };
 
-                        Metrics::record_request_complete(RequestStatus::Failed(error_type));
-                    }
+                    guard.complete(RequestStatus::Failed(error_type));
                     conversation_failed = true;
                     break;
                 }
@@ -1435,10 +1435,7 @@ impl BenchmarkRunner {
 
         let request_start = Instant::now();
 
-        // Only record metrics if not in warmup phase
-        if !is_warmup {
-            Metrics::record_request_sent();
-        }
+        let guard = InflightGuard::new(!is_warmup);
 
         // Add per-request cache-busting to ensure every request is unique
         let cache_bust_prompt = format!("[req-{}] {}", index, prompt.prompt);
@@ -1450,6 +1447,7 @@ impl BenchmarkRunner {
                 // Consume the stream to measure TTFT and total time
                 let mut total_content = String::with_capacity(1024);
 
+                let mut stream_err = None;
                 loop {
                     match stream.next_chunk().await {
                         Ok(Some(chunk)) => {
@@ -1464,12 +1462,14 @@ impl BenchmarkRunner {
                         }
                         Ok(None) => break, // Stream ended normally
                         Err(e) => {
-                            Metrics::record_request_complete(RequestStatus::Failed(
-                                ErrorType::Stream,
-                            ));
-                            return Err(e);
+                            stream_err = Some(e);
+                            break;
                         }
                     }
+                }
+                if let Some(e) = stream_err {
+                    guard.complete(RequestStatus::Failed(ErrorType::Stream));
+                    return Err(e);
                 }
 
                 // Use server-reported token counts when available (accurate for any model),
@@ -1534,9 +1534,9 @@ impl BenchmarkRunner {
                             content_gen.as_nanos() as u64 / (stream.content_tokens() as u64 - 1);
                         Metrics::record_tpot(Duration::from_nanos(tpot_ns), Phase::Content);
                     }
-
-                    Metrics::record_request_complete(RequestStatus::Success);
                 }
+
+                guard.complete(RequestStatus::Success);
 
                 // Log detailed metrics for analysis (to trace log if enabled)
                 if let Some(ttft) = stream.time_to_first_token() {
@@ -1558,28 +1558,25 @@ impl BenchmarkRunner {
             }
             Err(e) => {
                 debug!("Request {} failed: {}", index, e);
-                if !is_warmup {
-                    // Categorize the error
-                    let error_type = if let Some(client_error) = e.downcast_ref::<ClientError>() {
-                        match client_error {
-                            ClientError::Connection(_) => ErrorType::Connection,
-                            ClientError::Http4xx { status, .. } => ErrorType::Http4xx(*status),
-                            ClientError::Http5xx { status, .. } => ErrorType::Http5xx(*status),
-                            ClientError::Parse(_) => ErrorType::Parse,
-                            ClientError::Timeout(_) => ErrorType::Timeout,
-                            ClientError::StreamError { .. } => ErrorType::Stream,
-                            ClientError::Other(_) => ErrorType::Other,
-                        }
-                    } else if e.to_string().contains("timeout") {
-                        ErrorType::Timeout
-                    } else if e.to_string().contains("connection") {
-                        ErrorType::Connection
-                    } else {
-                        ErrorType::Other
-                    };
+                let error_type = if let Some(client_error) = e.downcast_ref::<ClientError>() {
+                    match client_error {
+                        ClientError::Connection(_) => ErrorType::Connection,
+                        ClientError::Http4xx { status, .. } => ErrorType::Http4xx(*status),
+                        ClientError::Http5xx { status, .. } => ErrorType::Http5xx(*status),
+                        ClientError::Parse(_) => ErrorType::Parse,
+                        ClientError::Timeout(_) => ErrorType::Timeout,
+                        ClientError::StreamError { .. } => ErrorType::Stream,
+                        ClientError::Other(_) => ErrorType::Other,
+                    }
+                } else if e.to_string().contains("timeout") {
+                    ErrorType::Timeout
+                } else if e.to_string().contains("connection") {
+                    ErrorType::Connection
+                } else {
+                    ErrorType::Other
+                };
 
-                    Metrics::record_request_complete(RequestStatus::Failed(error_type));
-                }
+                guard.complete(RequestStatus::Failed(error_type));
                 Err(e)
             }
         }

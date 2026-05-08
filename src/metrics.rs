@@ -270,13 +270,7 @@ impl Metrics {
         }
     }
 
-    pub fn record_request_sent() {
-        REQUESTS.increment(REQ_SENT);
-        REQUESTS_INFLIGHT.increment();
-    }
-
-    pub fn record_request_complete(status: RequestStatus) {
-        REQUESTS_INFLIGHT.decrement();
+    fn record_status(status: RequestStatus) {
         match status {
             RequestStatus::Success => {
                 REQUESTS.increment(REQ_SUCCESS);
@@ -303,7 +297,55 @@ impl Metrics {
             }
         }
     }
+}
 
+/// RAII guard that maintains the `requests_inflight` gauge and the `requests`
+/// counter group. Increments on construction; on drop decrements the gauge and
+/// — if `complete` was not called — records the request as `Canceled`.
+///
+/// When `active` is false (e.g. warmup), the guard is a no-op: no counters or
+/// gauges are touched at any point in its lifetime.
+#[must_use = "InflightGuard records Canceled on drop unless complete() is called"]
+pub struct InflightGuard {
+    active: bool,
+    completed: bool,
+}
+
+impl InflightGuard {
+    pub fn new(active: bool) -> Self {
+        if active {
+            REQUESTS.increment(REQ_SENT);
+            REQUESTS_INFLIGHT.increment();
+        }
+        Self {
+            active,
+            completed: false,
+        }
+    }
+
+    /// Record terminal status and consume the guard. Drop will still decrement
+    /// the inflight gauge but will not re-record status.
+    pub fn complete(mut self, status: RequestStatus) {
+        if self.active {
+            Metrics::record_status(status);
+        }
+        self.completed = true;
+    }
+}
+
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        REQUESTS_INFLIGHT.decrement();
+        if !self.completed {
+            REQUESTS.increment(REQ_CANCELED);
+        }
+    }
+}
+
+impl Metrics {
     pub fn record_tokens(input: u64, output_reasoning: u64, output_content: u64) {
         TOKENS.add(TOK_INPUT, input);
         TOKENS.add(TOK_OUTPUT_REASONING, output_reasoning);
