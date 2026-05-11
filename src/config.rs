@@ -81,6 +81,29 @@ pub struct LoadConfig {
     pub warmup_duration: Option<u64>, // Warmup duration in seconds (alternative to warmup_requests)
 }
 
+fn default_add_prefix() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyntheticConfig {
+    /// Average number of tokens in generated prompts
+    pub prompt_tokens: usize,
+    /// Standard deviation for prompt token count (Gaussian distribution)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_stdev: Option<usize>,
+    /// Minimum prompt token count (hard limit)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_min: Option<usize>,
+    /// Maximum prompt token count (hard limit)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_max: Option<usize>,
+    /// Whether to add unique [synthetic-{index}] prefix for cache busting
+    /// Default: true
+    #[serde(default = "default_add_prefix")]
+    pub add_prefix: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputConfig {
     pub file: PathBuf,
@@ -101,6 +124,17 @@ pub struct InputConfig {
     /// unless it is an absolute path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_prompt_file: Option<PathBuf>,
+    /// Synthetic data configuration. Used when file = "synthetic" to generate
+    /// random prompts with controlled token distributions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synthetic: Option<SyntheticConfig>,
+}
+
+impl InputConfig {
+    /// Check if synthetic mode is enabled
+    pub fn is_synthetic(&self) -> bool {
+        self.file.to_str() == Some("synthetic")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -420,6 +454,54 @@ impl Config {
             // Validate sample_window parses
             humantime::parse_duration(&sat.sample_window)
                 .map_err(|e| anyhow::anyhow!("saturation.sample_window: {}", e))?;
+        }
+
+        // Validate synthetic mode configuration
+        if self.input.is_synthetic() {
+            // Require endpoint.max_tokens to be set
+            if self.endpoint.max_tokens.is_none() {
+                anyhow::bail!(
+                    "Synthetic mode (file = \"synthetic\") requires endpoint.max_tokens to be set"
+                );
+            }
+
+            // Require [input.synthetic] section and validate its fields
+            let synthetic = self.input.synthetic.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Synthetic mode (file = \"synthetic\") requires [input.synthetic] configuration"
+                )
+            })?;
+
+            if synthetic.prompt_tokens == 0 {
+                anyhow::bail!("input.synthetic.prompt_tokens must be greater than 0");
+            }
+
+            // Validate prompt token bounds
+            if let Some(min) = synthetic.prompt_tokens_min
+                && min > synthetic.prompt_tokens
+            {
+                anyhow::bail!(
+                    "input.synthetic.prompt_tokens_min ({}) must be <= prompt_tokens ({})",
+                    min,
+                    synthetic.prompt_tokens
+                );
+            }
+            if let Some(max) = synthetic.prompt_tokens_max
+                && max < synthetic.prompt_tokens
+            {
+                anyhow::bail!(
+                    "input.synthetic.prompt_tokens_max ({}) must be >= prompt_tokens ({})",
+                    max,
+                    synthetic.prompt_tokens
+                );
+            }
+            if let Some(stdev) = synthetic.prompt_tokens_stdev
+                && stdev == 0
+            {
+                anyhow::bail!(
+                    "input.synthetic.prompt_tokens_stdev must be greater than 0 if specified"
+                );
+            }
         }
 
         Ok(())
