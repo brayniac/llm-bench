@@ -1338,16 +1338,19 @@ impl BenchmarkRunner {
                 Ok(mut stream) => {
                     // Consume stream, collect response content for conversation history
                     let mut response_content = String::with_capacity(1024);
+                    let mut reasoning_buf = String::with_capacity(512);
 
                     let mut stream_err = None;
                     loop {
                         match stream.next_chunk().await {
                             Ok(Some(chunk)) => {
                                 for choice in chunk.choices {
+                                    if let Some(reasoning) = choice.delta.reasoning_content {
+                                        reasoning_buf.push_str(&reasoning);
+                                    }
                                     if let Some(content) = choice.delta.content {
                                         response_content.push_str(&content);
                                     }
-                                    // Reasoning tokens don't go into conversation history
                                 }
                             }
                             Ok(None) => break, // Stream ended normally
@@ -1427,10 +1430,17 @@ impl BenchmarkRunner {
 
                     guard.complete(RequestStatus::Success);
 
-                    // Add assistant response to conversation history for next turn
+                    // Add assistant response to conversation history for next turn.
+                    // Include reasoning tokens with <think> tags so the reconstructed
+                    // token sequence matches what vLLM cached, enabling prefix cache hits.
+                    let assistant_content = if reasoning_buf.is_empty() {
+                        response_content
+                    } else {
+                        format!("<think>{}</think>{}", reasoning_buf, response_content)
+                    };
                     messages.push(Message {
                         role: "assistant".to_string(),
-                        content: response_content,
+                        content: assistant_content,
                     });
                 }
                 Err(e) => {
