@@ -438,6 +438,8 @@ mod tests {
             add_prefix: true,
             common_prefix_sample_ratio: 0.0,
             common_prefix_tokens: 0,
+            turns: 1,
+            turn_prompt_tokens: None,
         };
 
         let generator = SyntheticDataGenerator::new(&config, tokenizer.clone(), 42);
@@ -470,6 +472,8 @@ mod tests {
             add_prefix: true,
             common_prefix_sample_ratio: 0.0,
             common_prefix_tokens: 0,
+            turns: 1,
+            turn_prompt_tokens: None,
         };
 
         let mut generator = SyntheticDataGenerator::new(&config, tokenizer, 42);
@@ -503,6 +507,8 @@ mod tests {
             add_prefix: true,
             common_prefix_sample_ratio: 0.0,
             common_prefix_tokens: 0,
+            turns: 1,
+            turn_prompt_tokens: None,
         };
 
         // Generate twice with same seed
@@ -539,6 +545,8 @@ mod tests {
             add_prefix: false,
             common_prefix_sample_ratio: 0.0,
             common_prefix_tokens: 0,
+            turns: 1,
+            turn_prompt_tokens: None,
         };
 
         let generator = SyntheticDataGenerator::new(&config, tokenizer.clone(), 42);
@@ -571,6 +579,8 @@ mod tests {
             add_prefix: false,
             common_prefix_sample_ratio: 0.5, // 50% should share common prefix
             common_prefix_tokens: 50,
+            turns: 1,
+            turn_prompt_tokens: None,
         };
 
         let mut generator = SyntheticDataGenerator::new(&config, tokenizer.clone(), 42);

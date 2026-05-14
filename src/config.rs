@@ -93,6 +93,10 @@ fn default_common_prefix_tokens() -> usize {
     0
 }
 
+fn default_turns() -> usize {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyntheticConfig {
     /// Average number of tokens in generated prompts
@@ -120,6 +124,12 @@ pub struct SyntheticConfig {
     /// Default: 0
     #[serde(default = "default_common_prefix_tokens")]
     pub common_prefix_tokens: usize,
+    /// Number of turns per synthetic conversation (1 = single-turn, unchanged behavior)
+    #[serde(default = "default_turns")]
+    pub turns: usize,
+    /// Token count per subsequent turn (defaults to prompt_tokens if not set)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_prompt_tokens: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -539,6 +549,25 @@ impl Config {
                     "input.synthetic.common_prefix_tokens ({}) cannot exceed prompt_tokens ({})",
                     synthetic.common_prefix_tokens,
                     synthetic.prompt_tokens
+                );
+            }
+
+            // Validate turn fields
+            if synthetic.turns == 0 {
+                anyhow::bail!("input.synthetic.turns must be greater than 0");
+            }
+            if let Some(turn_tokens) = synthetic.turn_prompt_tokens
+                && turn_tokens == 0
+            {
+                anyhow::bail!("input.synthetic.turn_prompt_tokens must be greater than 0 if specified");
+            }
+            if synthetic.turn_prompt_tokens.is_some()
+                && synthetic.turn_prompt_tokens.unwrap() > synthetic.prompt_tokens_max.unwrap_or(synthetic.prompt_tokens)
+            {
+                anyhow::bail!(
+                    "input.synthetic.turn_prompt_tokens ({}) cannot exceed prompt_tokens_max ({})",
+                    synthetic.turn_prompt_tokens.unwrap(),
+                    synthetic.prompt_tokens_max.unwrap_or(synthetic.prompt_tokens),
                 );
             }
         }
