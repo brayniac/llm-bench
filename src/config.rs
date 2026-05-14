@@ -93,6 +93,10 @@ fn default_common_prefix_tokens() -> usize {
     0
 }
 
+fn default_cache_busting() -> bool {
+    true
+}
+
 fn default_turns() -> usize {
     1
 }
@@ -156,12 +160,12 @@ pub struct InputConfig {
     /// random prompts with controlled token distributions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synthetic: Option<SyntheticConfig>,
-    /// Disable the automatic [req-{index}] cache-busting prefix added to each prompt.
-    /// When true, prompts are sent as-is, allowing prefix caching to work.
-    /// When false (default), each prompt gets a unique prefix for independent benchmarking.
-    /// Default: false
-    #[serde(default)]
-    pub disable_cache_busting: bool,
+    /// Whether to prepend a unique [req-{index}] prefix to each prompt.
+    /// When true (default), each prompt gets a unique prefix for independent benchmarking.
+    /// When false, prompts are sent as-is, allowing prefix caching to work.
+    /// Default: true
+    #[serde(default = "default_cache_busting")]
+    pub cache_busting: bool,
 }
 
 impl InputConfig {
