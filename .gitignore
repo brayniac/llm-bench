@@ -34,3 +34,4 @@ examples/prompts/openorca-xxlarge.jsonl
 *-results.json
 *-results.csv
 benchmark-*.json
+.worktrees/
