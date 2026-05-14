@@ -14,7 +14,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 
-use crate::benchmark::{Prompt, Workload};
+use crate::benchmark::{Conversation, Prompt, Workload};
 use crate::config::SyntheticConfig;
 use crate::tokenizer::Tokenizer;
 
@@ -135,24 +135,44 @@ impl SyntheticDataGenerator {
     }
 
     /// Generate a single workload with sampled token counts.
-    pub fn generate_workload(&mut self, index: usize, max_tokens: Option<u32>) -> Workload {
-        let prompt_tokens = self.prompt_dist.sample();
+    pub fn generate_workload(&mut self, index: usize, max_tokens: Option<u32>, turns: usize) -> Workload {
+        // Determine turn_prompt_tokens for each turn
+        let first_turn_tokens = self.prompt_dist.sample();
+        let subsequent_turn_tokens: Vec<usize> = (0..turns.saturating_sub(1))
+            .map(|_| self.prompt_dist.sample())
+            .collect();
 
-        // Determine if this sample should use common prefix based on ratio
+        let mut user_turns = Vec::with_capacity(turns);
+
+        // First turn: use common_prefix logic
+        let prompt_tokens = first_turn_tokens;
         let use_common_prefix = if self.common_prefix_ratio > 0.0 {
-            // Use deterministic decision based on index
             let ratio_index = (index as f64) / (1.0 / self.common_prefix_ratio);
             ratio_index.fract() < self.common_prefix_ratio
         } else {
             false
         };
+        user_turns.push(self.generate_prompt_for_turn(prompt_tokens, index, 0, use_common_prefix, max_tokens));
 
-        let prompt_text = self.generate_prompt(prompt_tokens, index, use_common_prefix);
+        // Subsequent turns: no common prefix, each uses its own token count
+        for (turn_idx, &turn_token_count) in subsequent_turn_tokens.iter().enumerate() {
+            user_turns.push(self.generate_prompt_for_turn(
+                turn_token_count, index, turn_idx + 1, false, max_tokens,
+            ));
+        }
 
-        Workload::SingleTurn(Prompt {
-            prompt: prompt_text,
-            max_tokens,
-        })
+        if user_turns.len() == 1 {
+            Workload::SingleTurn(Prompt {
+                prompt: user_turns.pop().unwrap(),
+                max_tokens,
+            })
+        } else {
+            Workload::MultiTurn(Conversation {
+                system_prompt: None,
+                user_turns,
+                max_tokens,
+            })
+        }
     }
 
     /// Generate prompt text with exact token count.
@@ -238,6 +258,79 @@ impl SyntheticDataGenerator {
                 return full_text[..self.truncate_to_tokens(&full_text, token_count)].to_string();
             }
 
+            if attempts >= MAX_ATTEMPTS {
+                warn!(
+                    "Failed to generate {} tokens after {} attempts (got {}), using what we have",
+                    token_count, MAX_ATTEMPTS, token_count_actual
+                );
+                return full_text;
+            }
+        }
+    }
+
+    /// Generate prompt text for a specific turn with deterministic prefix.
+    fn generate_prompt_for_turn(
+        &self,
+        token_count: usize,
+        index: usize,
+        turn_idx: usize,
+        use_common_prefix: bool,
+        _max_tokens: Option<u32>,
+    ) -> String {
+        // Prefix uses workload index + turn index for deterministic uniqueness
+        let prefix = if use_common_prefix {
+            if let Some(ref common_prefix) = self.common_prefix_text {
+                if !common_prefix.is_empty() {
+                    common_prefix.clone()
+                } else if self.add_prefix {
+                    format!("[synthetic-{}-t{}] ", index, turn_idx)
+                } else {
+                    String::new()
+                }
+            } else if self.add_prefix {
+                format!("[synthetic-{}-t{}] ", index, turn_idx)
+            } else {
+                String::new()
+            }
+        } else if self.add_prefix {
+            format!("[synthetic-{}-t{}] ", index, turn_idx)
+        } else {
+            String::new()
+        };
+
+        // Calculate how many tokens we need after the prefix
+        let prefix_tokens = self.tokenizer.count_tokens(&prefix);
+        let remaining_tokens = if prefix_tokens >= token_count {
+            return prefix[..self.truncate_to_tokens(&prefix, token_count)].to_string();
+        } else {
+            token_count - prefix_tokens
+        };
+
+        const AVG_CHARS_PER_TOKEN: usize = 5;
+        const MARGIN_OF_SAFETY: f64 = 1.5;
+        const MAX_ATTEMPTS: usize = 3;
+
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let num_chars = ((remaining_tokens * AVG_CHARS_PER_TOKEN) as f64
+                * MARGIN_OF_SAFETY
+                * attempts as f64) as usize;
+
+            let mut rng = StdRng::seed_from_u64(self.seed + (index * 1000 + turn_idx) as u64);
+            let mut text = String::new();
+            while text.len() < num_chars {
+                let sentence: String = Sentence(5..20).fake_with_rng(&mut rng);
+                text.push_str(&sentence);
+                text.push(' ');
+            }
+            let text = text[..num_chars.min(text.len())].to_string();
+            let full_text = format!("{}{}", prefix, text);
+            let token_count_actual = self.tokenizer.count_tokens(&full_text);
+
+            if token_count_actual >= token_count {
+                return full_text[..self.truncate_to_tokens(&full_text, token_count)].to_string();
+            }
             if attempts >= MAX_ATTEMPTS {
                 warn!(
                     "Failed to generate {} tokens after {} attempts (got {}), using what we have",
@@ -352,10 +445,11 @@ pub fn generate_synthetic_workloads(
     seed: u64,
     max_tokens: Option<u32>,
 ) -> Result<Vec<Workload>> {
+    let turns = config.turns.max(1);
     let mut generator = SyntheticDataGenerator::new(config, tokenizer, seed);
 
     let workloads: Vec<Workload> = (0..sample_size)
-        .map(|i| generator.generate_workload(i, max_tokens))
+        .map(|i| generator.generate_workload(i, max_tokens, turns))
         .collect();
 
     Ok(workloads)
@@ -477,13 +571,13 @@ mod tests {
         };
 
         let mut generator = SyntheticDataGenerator::new(&config, tokenizer, 42);
-        let workload = generator.generate_workload(0, Some(50));
+        let workload = generator.generate_workload(0, Some(50), 1);
 
         match workload {
             Workload::SingleTurn(prompt) => {
                 assert!(
-                    prompt.prompt.starts_with("[synthetic-0]"),
-                    "Workload should have cache-busting prefix"
+                    prompt.prompt.starts_with("[synthetic-0-t0]"),
+                    "Workload should have cache-busting prefix with turn index"
                 );
                 assert_eq!(
                     prompt.max_tokens,
@@ -587,7 +681,7 @@ mod tests {
 
         // Generate multiple workloads
         let workloads: Vec<_> = (0..10)
-            .map(|i| generator.generate_workload(i, Some(50)))
+            .map(|i| generator.generate_workload(i, Some(50), 1))
             .collect();
 
         // Extract prompts
