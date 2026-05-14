@@ -173,6 +173,7 @@ impl BenchmarkRunner {
             retry_initial_delay_ms: config.endpoint.retry_initial_delay_ms,
             retry_max_delay_ms: config.endpoint.retry_max_delay_ms,
             pool_size: config.load.concurrent_requests, // Pool size matches concurrency
+            chat_template_kwargs: config.endpoint.chat_template_kwargs.clone(),
         })?;
 
         // Create tokenizer

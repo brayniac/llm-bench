@@ -53,6 +53,10 @@ pub struct EndpointConfig {
     pub health_check_timeout: u64, // Total time to wait for server readiness in seconds (0 = disabled)
     #[serde(default = "default_health_check_interval")]
     pub health_check_interval: u64, // Interval between readiness check retries in seconds
+    /// Additional kwargs passed to the model's chat template for every request.
+    /// For example, set `{enable_thinking = false}` to disable thinking mode on Qwen3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

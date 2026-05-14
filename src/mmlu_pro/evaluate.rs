@@ -216,6 +216,7 @@ pub async fn run_evaluation(
         retry_initial_delay_ms: 1000,
         retry_max_delay_ms: 30000,
         pool_size: config.load.concurrent_requests,
+        chat_template_kwargs: None,
     };
 
     let client = Arc::new(OpenAIClient::new(client_config)?);
@@ -420,6 +421,7 @@ pub async fn run_evaluation(
                     stream_options: None,
                     logprobs: None,
                     top_logprobs: None,
+                    chat_template_kwargs: None,
                 };
 
                 let response = match client.chat_completion(request).await {

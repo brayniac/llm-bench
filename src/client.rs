@@ -38,6 +38,7 @@ pub struct OpenAIClient {
     max_retries: u32,
     retry_initial_delay_ms: u64,
     retry_max_delay_ms: u64,
+    chat_template_kwargs: Option<serde_json::Value>,
 }
 
 // Request types for OpenAI Chat Completions API
@@ -65,6 +66,8 @@ pub struct ChatCompletionRequest {
     pub logprobs: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_logprobs: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -204,6 +207,8 @@ pub struct ClientConfig {
     pub retry_max_delay_ms: u64,
     /// Connection pool size (should match concurrency for optimal performance)
     pub pool_size: usize,
+    /// Additional kwargs forwarded to the model's chat template for every request.
+    pub chat_template_kwargs: Option<serde_json::Value>,
 }
 
 impl OpenAIClient {
@@ -255,6 +260,7 @@ impl OpenAIClient {
             max_retries: config.max_retries,
             retry_initial_delay_ms: config.retry_initial_delay_ms,
             retry_max_delay_ms: config.retry_max_delay_ms,
+            chat_template_kwargs: config.chat_template_kwargs,
         })
     }
 
@@ -394,6 +400,7 @@ impl OpenAIClient {
             stream_options: None,
             logprobs,
             top_logprobs,
+            chat_template_kwargs: self.chat_template_kwargs.clone(),
         }
     }
 
