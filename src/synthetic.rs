@@ -97,6 +97,7 @@ impl TokenDistribution {
 /// Generates synthetic prompts with exact token counts.
 pub struct SyntheticDataGenerator {
     prompt_dist: TokenDistribution,
+    turn_prompt_tokens: Option<usize>,
     tokenizer: Arc<Tokenizer>,
     seed: u64,
     add_prefix: bool,
@@ -126,6 +127,7 @@ impl SyntheticDataGenerator {
                 config.prompt_tokens_max,
                 seed,
             ),
+            turn_prompt_tokens: config.turn_prompt_tokens,
             tokenizer,
             seed,
             add_prefix: config.add_prefix,
@@ -156,8 +158,13 @@ impl SyntheticDataGenerator {
 
         // Subsequent turns: no common prefix, each uses its own token count
         for (turn_idx, &turn_token_count) in subsequent_turn_tokens.iter().enumerate() {
+            let token_count = if let Some(tp) = self.turn_prompt_tokens {
+                tp
+            } else {
+                turn_token_count
+            };
             user_turns.push(self.generate_prompt_for_turn(
-                turn_token_count, index, turn_idx + 1, false, max_tokens,
+                token_count, index, turn_idx + 1, false, max_tokens,
             ));
         }
 
@@ -715,6 +722,92 @@ mod tests {
                 "Token count {} should be close to target 100",
                 token_count
             );
+        }
+    }
+
+    #[test]
+    fn test_multi_turn_generation() {
+        let tokenizer = Arc::new(Tokenizer::new("gpt-3.5-turbo").expect("Failed to create tokenizer"));
+        let config = SyntheticConfig {
+            prompt_tokens: 64,
+            prompt_tokens_stdev: None,
+            prompt_tokens_min: None,
+            prompt_tokens_max: None,
+            add_prefix: true,
+            common_prefix_sample_ratio: 0.0,
+            common_prefix_tokens: 0,
+            turns: 3,
+            turn_prompt_tokens: Some(48),
+        };
+
+        let mut generator = SyntheticDataGenerator::new(&config, tokenizer.clone(), 42);
+        let workload = generator.generate_workload(0, Some(50), 3);
+
+        match workload {
+            Workload::MultiTurn(conv) => {
+                assert_eq!(conv.user_turns.len(), 3, "Should have 3 user turns");
+                assert_eq!(conv.max_tokens, Some(50));
+
+                // First turn uses prompt_tokens (64)
+                let first_tokens = tokenizer.count_tokens(&conv.user_turns[0]);
+                assert!(
+                    (62..=68).contains(&first_tokens),
+                    "First turn token count {} should be close to 64",
+                    first_tokens
+                );
+                assert!(conv.user_turns[0].starts_with("[synthetic-0-t0]"), "First turn should have correct prefix");
+
+                // Subsequent turns use turn_prompt_tokens (48)
+                for (i, turn) in conv.user_turns.iter().skip(1).enumerate() {
+                    let turn_idx = i + 1;
+                    let turn_tokens = tokenizer.count_tokens(turn);
+                    assert!(
+                        (46..=52).contains(&turn_tokens),
+                        "Turn {} token count {} should be close to 48",
+                        turn_idx,
+                        turn_tokens
+                    );
+                    assert!(
+                        turn.starts_with(&format!("[synthetic-0-t{}]", turn_idx)),
+                        "Turn {} should have correct turn-specific prefix",
+                        turn_idx
+                    );
+                }
+            }
+            _ => panic!("Expected MultiTurn workload"),
+        }
+    }
+
+    #[test]
+    fn test_multi_turn_deterministic() {
+        let tokenizer = Arc::new(Tokenizer::new("gpt-3.5-turbo").expect("Failed to create tokenizer"));
+        let config = SyntheticConfig {
+            prompt_tokens: 50,
+            prompt_tokens_stdev: None,
+            prompt_tokens_min: None,
+            prompt_tokens_max: None,
+            add_prefix: true,
+            common_prefix_sample_ratio: 0.0,
+            common_prefix_tokens: 0,
+            turns: 4,
+            turn_prompt_tokens: None,
+        };
+
+        let workloads1 = generate_synthetic_workloads(&config, tokenizer.clone(), 5, 42, Some(100))
+            .expect("Failed to generate workloads");
+        let workloads2 = generate_synthetic_workloads(&config, tokenizer.clone(), 5, 42, Some(100))
+            .expect("Failed to generate workloads");
+
+        for (w1, w2) in workloads1.iter().zip(workloads2.iter()) {
+            match (w1, w2) {
+                (Workload::MultiTurn(c1), Workload::MultiTurn(c2)) => {
+                    assert_eq!(c1.user_turns.len(), c2.user_turns.len());
+                    for (t1, t2) in c1.user_turns.iter().zip(c2.user_turns.iter()) {
+                        assert_eq!(t1, t2, "Same seed should produce identical turns");
+                    }
+                }
+                _ => panic!("Expected MultiTurn workloads"),
+            }
         }
     }
 }
