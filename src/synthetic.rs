@@ -137,7 +137,12 @@ impl SyntheticDataGenerator {
     }
 
     /// Generate a single workload with sampled token counts.
-    pub fn generate_workload(&mut self, index: usize, max_tokens: Option<u32>, turns: usize) -> Workload {
+    pub fn generate_workload(
+        &mut self,
+        index: usize,
+        max_tokens: Option<u32>,
+        turns: usize,
+    ) -> Workload {
         // Determine turn_prompt_tokens for each turn
         let first_turn_tokens = self.prompt_dist.sample();
         let subsequent_turn_tokens: Vec<usize> = (0..turns.saturating_sub(1))
@@ -154,7 +159,13 @@ impl SyntheticDataGenerator {
         } else {
             false
         };
-        user_turns.push(self.generate_prompt_for_turn(prompt_tokens, index, 0, use_common_prefix, max_tokens));
+        user_turns.push(self.generate_prompt_for_turn(
+            prompt_tokens,
+            index,
+            0,
+            use_common_prefix,
+            max_tokens,
+        ));
 
         // Subsequent turns: no common prefix, each uses its own token count
         for (turn_idx, &turn_token_count) in subsequent_turn_tokens.iter().enumerate() {
@@ -164,7 +175,11 @@ impl SyntheticDataGenerator {
                 turn_token_count
             };
             user_turns.push(self.generate_prompt_for_turn(
-                token_count, index, turn_idx + 1, false, max_tokens,
+                token_count,
+                index,
+                turn_idx + 1,
+                false,
+                max_tokens,
             ));
         }
 
@@ -179,99 +194,6 @@ impl SyntheticDataGenerator {
                 user_turns,
                 max_tokens,
             })
-        }
-    }
-
-    /// Generate prompt text with exact token count.
-    ///
-    /// Uses guidellm's algorithm:
-    /// 1. Estimate chars needed: tokens × 5 × 1.5 × attempts
-    /// 2. Generate random text with fake-rs
-    /// 3. Tokenize and check count
-    /// 4. If not enough tokens, retry with more chars
-    /// 5. Truncate to exact token count
-    fn generate_prompt(&self, token_count: usize, index: usize, use_common_prefix: bool) -> String {
-        // Determine prefix based on common prefix setting
-        let prefix = if use_common_prefix {
-            // Try to use common prefix if it exists and is non-empty
-            if let Some(ref common_prefix) = self.common_prefix_text {
-                if !common_prefix.is_empty() {
-                    common_prefix.clone()
-                } else if self.add_prefix {
-                    // Common prefix is empty, use unique prefix
-                    format!("[synthetic-{}] ", index)
-                } else {
-                    String::new()
-                }
-            } else if self.add_prefix {
-                // No common prefix, use unique prefix
-                format!("[synthetic-{}] ", index)
-            } else {
-                String::new()
-            }
-        } else if self.add_prefix {
-            // Not using common prefix, add unique prefix for cache busting
-            format!("[synthetic-{}] ", index)
-        } else {
-            String::new()
-        };
-
-        // Calculate how many tokens we need to generate after the prefix
-        let prefix_tokens = self.tokenizer.count_tokens(&prefix);
-        let remaining_tokens = if prefix_tokens >= token_count {
-            // Prefix already meets or exceeds target, just return it (truncated if needed)
-            return prefix[..self.truncate_to_tokens(&prefix, token_count)].to_string();
-        } else {
-            token_count - prefix_tokens
-        };
-
-        const AVG_CHARS_PER_TOKEN: usize = 5;
-        const MARGIN_OF_SAFETY: f64 = 1.5;
-        const MAX_ATTEMPTS: usize = 3;
-
-        let mut attempts = 0;
-
-        loop {
-            attempts += 1;
-
-            // Estimate characters needed for remaining tokens
-            let num_chars = ((remaining_tokens * AVG_CHARS_PER_TOKEN) as f64
-                * MARGIN_OF_SAFETY
-                * attempts as f64) as usize;
-
-            // Generate random text using fake-rs
-            // Use a deterministic seed based on index for reproducibility
-            let mut rng = StdRng::seed_from_u64(self.seed + index as u64);
-
-            // Generate text by concatenating sentences until we have enough characters
-            let mut text = String::new();
-            while text.len() < num_chars {
-                let sentence: String = Sentence(5..20).fake_with_rng(&mut rng);
-                text.push_str(&sentence);
-                text.push(' ');
-            }
-
-            // Truncate to requested length
-            let text = text[..num_chars.min(text.len())].to_string();
-
-            let full_text = format!("{}{}", prefix, text);
-
-            // Tokenize
-            let token_count_actual = self.tokenizer.count_tokens(&full_text);
-
-            if token_count_actual >= token_count {
-                // Success - we have enough tokens
-                // Now truncate to exact count by encoding/decoding
-                return full_text[..self.truncate_to_tokens(&full_text, token_count)].to_string();
-            }
-
-            if attempts >= MAX_ATTEMPTS {
-                warn!(
-                    "Failed to generate {} tokens after {} attempts (got {}), using what we have",
-                    token_count, MAX_ATTEMPTS, token_count_actual
-                );
-                return full_text;
-            }
         }
     }
 
@@ -544,12 +466,12 @@ mod tests {
         };
 
         let generator = SyntheticDataGenerator::new(&config, tokenizer.clone(), 42);
-        let text = generator.generate_prompt(50, 0, false);
+        let text = generator.generate_prompt_for_turn(50, 0, 0, false, None);
 
         // Verify it has the prefix
         assert!(
-            text.starts_with("[synthetic-0]"),
-            "Prompt should have cache-busting prefix"
+            text.starts_with("[synthetic-0-t0]"),
+            "Prompt should have cache-busting prefix with turn index"
         );
 
         // Verify token count is close to target (allow some tolerance due to tokenization)
@@ -651,7 +573,7 @@ mod tests {
         };
 
         let generator = SyntheticDataGenerator::new(&config, tokenizer.clone(), 42);
-        let text = generator.generate_prompt(50, 0, false);
+        let text = generator.generate_prompt_for_turn(50, 0, 0, false, None);
 
         // Verify it does NOT have the prefix
         assert!(
@@ -727,7 +649,8 @@ mod tests {
 
     #[test]
     fn test_multi_turn_generation() {
-        let tokenizer = Arc::new(Tokenizer::new("gpt-3.5-turbo").expect("Failed to create tokenizer"));
+        let tokenizer =
+            Arc::new(Tokenizer::new("gpt-3.5-turbo").expect("Failed to create tokenizer"));
         let config = SyntheticConfig {
             prompt_tokens: 64,
             prompt_tokens_stdev: None,
@@ -755,7 +678,10 @@ mod tests {
                     "First turn token count {} should be close to 64",
                     first_tokens
                 );
-                assert!(conv.user_turns[0].starts_with("[synthetic-0-t0]"), "First turn should have correct prefix");
+                assert!(
+                    conv.user_turns[0].starts_with("[synthetic-0-t0]"),
+                    "First turn should have correct prefix"
+                );
 
                 // Subsequent turns use turn_prompt_tokens (48)
                 for (i, turn) in conv.user_turns.iter().skip(1).enumerate() {
@@ -780,7 +706,8 @@ mod tests {
 
     #[test]
     fn test_multi_turn_deterministic() {
-        let tokenizer = Arc::new(Tokenizer::new("gpt-3.5-turbo").expect("Failed to create tokenizer"));
+        let tokenizer =
+            Arc::new(Tokenizer::new("gpt-3.5-turbo").expect("Failed to create tokenizer"));
         let config = SyntheticConfig {
             prompt_tokens: 50,
             prompt_tokens_stdev: None,

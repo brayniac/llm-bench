@@ -559,15 +559,22 @@ impl Config {
             if let Some(turn_tokens) = synthetic.turn_prompt_tokens
                 && turn_tokens == 0
             {
-                anyhow::bail!("input.synthetic.turn_prompt_tokens must be greater than 0 if specified");
+                anyhow::bail!(
+                    "input.synthetic.turn_prompt_tokens must be greater than 0 if specified"
+                );
             }
-            if synthetic.turn_prompt_tokens.is_some()
-                && synthetic.turn_prompt_tokens.unwrap() > synthetic.prompt_tokens_max.unwrap_or(synthetic.prompt_tokens)
+            if let Some(turn_tokens) = synthetic.turn_prompt_tokens
+                && turn_tokens
+                    > synthetic
+                        .prompt_tokens_max
+                        .unwrap_or(synthetic.prompt_tokens)
             {
                 anyhow::bail!(
                     "input.synthetic.turn_prompt_tokens ({}) cannot exceed prompt_tokens_max ({})",
-                    synthetic.turn_prompt_tokens.unwrap(),
-                    synthetic.prompt_tokens_max.unwrap_or(synthetic.prompt_tokens),
+                    turn_tokens,
+                    synthetic
+                        .prompt_tokens_max
+                        .unwrap_or(synthetic.prompt_tokens),
                 );
             }
         }
