@@ -237,6 +237,7 @@ impl OpenAIClient {
     ///     retry_initial_delay_ms: 100,
     ///     retry_max_delay_ms: 10000,
     ///     pool_size: 10,
+    ///     chat_template_kwargs: None,
     /// };
     ///
     /// let client = OpenAIClient::new(config).unwrap();
