@@ -50,16 +50,16 @@ pub struct Conversation {
 
 /// Raw ShareGPT format for deserialization
 #[derive(Debug, Deserialize)]
-struct ShareGPTEntry {
-    conversations: Vec<ShareGPTMessage>,
+pub(crate) struct ShareGPTEntry {
+    pub(crate) conversations: Vec<ShareGPTMessage>,
     #[serde(default)]
-    max_tokens: Option<u32>,
+    pub(crate) max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ShareGPTMessage {
-    from: String,
-    value: String,
+pub(crate) struct ShareGPTMessage {
+    pub(crate) from: String,
+    pub(crate) value: String,
 }
 
 /// A workload item — either a single prompt or a multi-turn conversation.
@@ -221,11 +221,7 @@ impl BenchmarkRunner {
         // In synthetic mode with add_prefix enabled, each generated prompt already carries a
         // unique [synthetic-{index}-t{turn}] prefix. Disable the request-level cache_busting
         // prefix to avoid stacking a redundant [req-N] on top and inflating token counts.
-        if config.input.is_synthetic()
-            && let Some(ref syn) = config.input.synthetic
-            && syn.add_prefix
-            && config.input.cache_busting
-        {
+        if config.input.should_suppress_cache_busting() {
             info!(
                 "Synthetic add_prefix is enabled; disabling cache_busting to avoid double prefix"
             );
@@ -314,7 +310,7 @@ impl BenchmarkRunner {
         Ok(workloads)
     }
 
-    fn parse_sharegpt_entry(entry: ShareGPTEntry) -> Option<Conversation> {
+    pub(crate) fn parse_sharegpt_entry(entry: ShareGPTEntry) -> Option<Conversation> {
         let mut system_prompt = None;
         let mut user_turns = Vec::new();
 
@@ -1507,6 +1503,24 @@ impl BenchmarkRunner {
         Ok(())
     }
 
+    pub(crate) fn build_single_turn_messages(
+        system_prompt: &Option<String>,
+        user_content: String,
+    ) -> Vec<Message> {
+        let mut messages = Vec::new();
+        if let Some(sp) = system_prompt {
+            messages.push(Message {
+                role: "system".to_string(),
+                content: sp.clone(),
+            });
+        }
+        messages.push(Message {
+            role: "user".to_string(),
+            content: user_content,
+        });
+        messages
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn execute_request(
         system_prompt: &Option<String>,
@@ -1533,18 +1547,7 @@ impl BenchmarkRunner {
         };
         let max_tokens = resolve_max_tokens(default_max_tokens, prompt.max_tokens);
 
-        let mut messages = Vec::new();
-        if let Some(sp) = system_prompt {
-            messages.push(Message {
-                role: "system".to_string(),
-                content: sp.clone(),
-            });
-        }
-        messages.push(Message {
-            role: "user".to_string(),
-            content: user_content,
-        });
-
+        let messages = Self::build_single_turn_messages(system_prompt, user_content);
         let request = client.create_messages_request(&messages, max_tokens, None, None);
 
         match client.chat_completion_stream(request).await {
@@ -1803,5 +1806,131 @@ impl BenchmarkRunner {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{InputConfig, SyntheticConfig};
+
+    // Helper to build a minimal synthetic InputConfig
+    fn synthetic_input(add_prefix: bool, cache_busting: bool) -> InputConfig {
+        InputConfig {
+            file: "synthetic".into(),
+            seed: None,
+            sample_size: None,
+            system_prompt: None,
+            system_prompt_file: None,
+            synthetic: Some(SyntheticConfig {
+                prompt_tokens: 100,
+                prompt_tokens_stdev: None,
+                prompt_tokens_min: None,
+                prompt_tokens_max: None,
+                add_prefix,
+                common_prefix_sample_ratio: 0.0,
+                common_prefix_tokens: 0,
+                turns: 1,
+                turn_prompt_tokens: None,
+            }),
+            cache_busting,
+        }
+    }
+
+    // --- ShareGPT system prompt preservation ---
+
+    #[test]
+    fn sharegpt_entry_captures_system_prompt() {
+        let entry = ShareGPTEntry {
+            conversations: vec![
+                ShareGPTMessage {
+                    from: "system".to_string(),
+                    value: "Be helpful.".to_string(),
+                },
+                ShareGPTMessage {
+                    from: "human".to_string(),
+                    value: "Hello".to_string(),
+                },
+                ShareGPTMessage {
+                    from: "gpt".to_string(),
+                    value: "Hi!".to_string(),
+                },
+            ],
+            max_tokens: None,
+        };
+        let conv = BenchmarkRunner::parse_sharegpt_entry(entry).unwrap();
+        assert_eq!(conv.system_prompt, Some("Be helpful.".to_string()));
+        assert_eq!(conv.user_turns, vec!["Hello"]);
+    }
+
+    #[test]
+    fn sharegpt_entry_without_system_prompt_is_none() {
+        let entry = ShareGPTEntry {
+            conversations: vec![
+                ShareGPTMessage {
+                    from: "human".to_string(),
+                    value: "Hello".to_string(),
+                },
+                ShareGPTMessage {
+                    from: "gpt".to_string(),
+                    value: "Hi!".to_string(),
+                },
+            ],
+            max_tokens: None,
+        };
+        let conv = BenchmarkRunner::parse_sharegpt_entry(entry).unwrap();
+        assert_eq!(conv.system_prompt, None);
+    }
+
+    // --- Single-turn system prompt message ordering ---
+
+    #[test]
+    fn build_single_turn_messages_prepends_system_message() {
+        let system = Some("You are a pirate.".to_string());
+        let messages = BenchmarkRunner::build_single_turn_messages(&system, "Hello".to_string());
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[0].content, "You are a pirate.");
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, "Hello");
+    }
+
+    #[test]
+    fn build_single_turn_messages_omits_system_when_none() {
+        let messages = BenchmarkRunner::build_single_turn_messages(&None, "Hello".to_string());
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "Hello");
+    }
+
+    // --- Synthetic cache-busting suppression ---
+
+    #[test]
+    fn cache_busting_suppressed_when_synthetic_add_prefix_on() {
+        assert!(synthetic_input(true, true).should_suppress_cache_busting());
+    }
+
+    #[test]
+    fn cache_busting_not_suppressed_when_add_prefix_off() {
+        assert!(!synthetic_input(false, true).should_suppress_cache_busting());
+    }
+
+    #[test]
+    fn cache_busting_not_suppressed_when_already_disabled() {
+        assert!(!synthetic_input(true, false).should_suppress_cache_busting());
+    }
+
+    #[test]
+    fn cache_busting_not_suppressed_for_file_mode() {
+        let config = InputConfig {
+            file: "prompts.jsonl".into(),
+            seed: None,
+            sample_size: None,
+            system_prompt: None,
+            system_prompt_file: None,
+            synthetic: None,
+            cache_busting: true,
+        };
+        assert!(!config.should_suppress_cache_busting());
     }
 }

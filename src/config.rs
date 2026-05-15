@@ -178,6 +178,14 @@ impl InputConfig {
     pub fn is_synthetic(&self) -> bool {
         self.file.to_str() == Some("synthetic")
     }
+
+    /// Returns true when cache_busting should be disabled because synthetic add_prefix
+    /// already guarantees uniqueness via a per-workload [synthetic-N-tT] prefix.
+    pub fn should_suppress_cache_busting(&self) -> bool {
+        self.is_synthetic()
+            && self.synthetic.as_ref().is_some_and(|s| s.add_prefix)
+            && self.cache_busting
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
