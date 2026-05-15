@@ -153,6 +153,8 @@ impl SyntheticDataGenerator {
 
         // First turn: use common_prefix logic
         let prompt_tokens = first_turn_tokens;
+        // Deterministic strided selection: for ratio=0.5 this picks indices 0,2,4,…
+        // (i.e. every 1/ratio requests). Not random — predictable for reproducible cache tests.
         let use_common_prefix = if self.common_prefix_ratio > 0.0 {
             let ratio_index = (index as f64) / (1.0 / self.common_prefix_ratio);
             ratio_index.fract() < self.common_prefix_ratio

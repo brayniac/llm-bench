@@ -122,8 +122,9 @@ pub struct SyntheticConfig {
     /// Default: true
     #[serde(default = "default_add_prefix")]
     pub add_prefix: bool,
-    /// Ratio of samples that share a common prefix (0.0 to 1.0)
-    /// Used to test prefix caching effectiveness. 0.0 = all unique, 1.0 = all share common prefix
+    /// Ratio of samples that share a common prefix (0.0 to 1.0).
+    /// Used to test prefix caching effectiveness. 0.0 = all unique, 1.0 = all share common prefix.
+    /// Selection is deterministic and strided (e.g. 0.5 picks every other request), not random.
     /// Default: 0.0
     #[serde(default = "default_common_prefix_sample_ratio")]
     pub common_prefix_sample_ratio: f64,

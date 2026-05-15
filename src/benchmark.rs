@@ -218,6 +218,20 @@ impl BenchmarkRunner {
             }
         };
 
+        // In synthetic mode with add_prefix enabled, each generated prompt already carries a
+        // unique [synthetic-{index}-t{turn}] prefix. Disable the request-level cache_busting
+        // prefix to avoid stacking a redundant [req-N] on top and inflating token counts.
+        if config.input.is_synthetic() {
+            if let Some(ref syn) = config.input.synthetic {
+                if syn.add_prefix && config.input.cache_busting {
+                    info!(
+                        "Synthetic add_prefix is enabled; disabling cache_busting to avoid double prefix"
+                    );
+                    config.input.cache_busting = false;
+                }
+            }
+        }
+
         // Log what we loaded or generated
         if config.input.is_synthetic() {
             info!("Generated {} synthetic prompts", workloads.len());
@@ -238,13 +252,15 @@ impl BenchmarkRunner {
             }
         }
 
-        // Load system prompt: first try inline string, then file if specified
-        let system_prompt_str = if let Some(ref inline) = config.input.system_prompt {
-            inline.clone()
+        // Load system prompt: first try inline string, then file if specified.
+        // None means "not configured" — dataset conversations keep their own system prompts.
+        let system_prompt_opt: Option<String> = if let Some(ref inline) = config.input.system_prompt
+        {
+            Some(inline.clone())
         } else if let Some(file_path) = &config.input.system_prompt_file {
             if let Ok(content) = read_to_string(file_path).await {
                 info!("Loaded system prompt from file: {}", file_path.display());
-                content
+                Some(content)
             } else {
                 warn!("Failed to read system prompt file: {}", file_path.display());
                 return Err(anyhow::anyhow!(
@@ -253,10 +269,10 @@ impl BenchmarkRunner {
                 ));
             }
         } else {
-            String::new()
+            None
         };
 
-        let system_prompt = Arc::new(Some(system_prompt_str));
+        let system_prompt = Arc::new(system_prompt_opt);
         Ok(Self {
             client: Arc::new(client),
             config,
@@ -1247,6 +1263,7 @@ impl BenchmarkRunner {
         match workload {
             Workload::SingleTurn(prompt) => {
                 Self::execute_request(
+                    system_prompt,
                     client,
                     tokenizer,
                     prompt,
@@ -1258,9 +1275,15 @@ impl BenchmarkRunner {
                 .await
             }
             Workload::MultiTurn(conversation) => {
-                let conversation = Conversation {
-                    system_prompt: system_prompt.clone(),
-                    ..conversation.clone()
+                // Only override the conversation's system prompt when one is explicitly configured.
+                // Otherwise preserve what the dataset provided (e.g. ShareGPT system prompts).
+                let conversation = if system_prompt.is_some() {
+                    Conversation {
+                        system_prompt: system_prompt.clone(),
+                        ..conversation.clone()
+                    }
+                } else {
+                    conversation.clone()
                 };
                 Self::execute_conversation(
                     client,
@@ -1484,7 +1507,9 @@ impl BenchmarkRunner {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_request(
+        system_prompt: &Option<String>,
         client: Arc<OpenAIClient>,
         tokenizer: Arc<Tokenizer>,
         prompt: &Prompt,
@@ -1501,13 +1526,26 @@ impl BenchmarkRunner {
 
         // Add per-request cache-busting to ensure every request is unique
         // (unless disabled for prefix caching tests)
-        let final_prompt = if !cache_busting {
+        let user_content = if !cache_busting {
             prompt.prompt.clone()
         } else {
             format!("[req-{}] {}", index, prompt.prompt)
         };
         let max_tokens = resolve_max_tokens(default_max_tokens, prompt.max_tokens);
-        let request = client.create_request(&final_prompt, max_tokens, None, None);
+
+        let mut messages = Vec::new();
+        if let Some(sp) = system_prompt {
+            messages.push(Message {
+                role: "system".to_string(),
+                content: sp.clone(),
+            });
+        }
+        messages.push(Message {
+            role: "user".to_string(),
+            content: user_content,
+        });
+
+        let request = client.create_messages_request(&messages, max_tokens, None, None);
 
         match client.chat_completion_stream(request).await {
             Ok(mut stream) => {
@@ -1544,7 +1582,10 @@ impl BenchmarkRunner {
                 let input_tokens = if let Some(usage) = stream.server_usage() {
                     usage.prompt_tokens as u64
                 } else {
-                    tokenizer.count_tokens(&prompt.prompt) as u64
+                    messages
+                        .iter()
+                        .map(|m| tokenizer.count_tokens(&m.content))
+                        .sum::<usize>() as u64
                 };
 
                 // Only record metrics if not in warmup phase
