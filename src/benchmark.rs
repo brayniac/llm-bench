@@ -50,16 +50,16 @@ pub struct Conversation {
 
 /// Raw ShareGPT format for deserialization
 #[derive(Debug, Deserialize)]
-struct ShareGPTEntry {
-    conversations: Vec<ShareGPTMessage>,
+pub(crate) struct ShareGPTEntry {
+    pub(crate) conversations: Vec<ShareGPTMessage>,
     #[serde(default)]
-    max_tokens: Option<u32>,
+    pub(crate) max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ShareGPTMessage {
-    from: String,
-    value: String,
+pub(crate) struct ShareGPTMessage {
+    pub(crate) from: String,
+    pub(crate) value: String,
 }
 
 /// A workload item — either a single prompt or a multi-turn conversation.
@@ -218,6 +218,16 @@ impl BenchmarkRunner {
             }
         };
 
+        // In synthetic mode with add_prefix enabled, each generated prompt already carries a
+        // unique [synthetic-{index}-t{turn}] prefix. Disable the request-level cache_busting
+        // prefix to avoid stacking a redundant [req-N] on top and inflating token counts.
+        if config.input.should_suppress_cache_busting() {
+            info!(
+                "Synthetic add_prefix is enabled; disabling cache_busting to avoid double prefix"
+            );
+            config.input.cache_busting = false;
+        }
+
         // Log what we loaded or generated
         if config.input.is_synthetic() {
             info!("Generated {} synthetic prompts", workloads.len());
@@ -238,13 +248,15 @@ impl BenchmarkRunner {
             }
         }
 
-        // Load system prompt: first try inline string, then file if specified
-        let system_prompt_str = if let Some(ref inline) = config.input.system_prompt {
-            inline.clone()
+        // Load system prompt: first try inline string, then file if specified.
+        // None means "not configured" — dataset conversations keep their own system prompts.
+        let system_prompt_opt: Option<String> = if let Some(ref inline) = config.input.system_prompt
+        {
+            Some(inline.clone())
         } else if let Some(file_path) = &config.input.system_prompt_file {
             if let Ok(content) = read_to_string(file_path).await {
                 info!("Loaded system prompt from file: {}", file_path.display());
-                content
+                Some(content)
             } else {
                 warn!("Failed to read system prompt file: {}", file_path.display());
                 return Err(anyhow::anyhow!(
@@ -253,10 +265,10 @@ impl BenchmarkRunner {
                 ));
             }
         } else {
-            String::new()
+            None
         };
 
-        let system_prompt = Arc::new(Some(system_prompt_str));
+        let system_prompt = Arc::new(system_prompt_opt);
         Ok(Self {
             client: Arc::new(client),
             config,
@@ -298,7 +310,7 @@ impl BenchmarkRunner {
         Ok(workloads)
     }
 
-    fn parse_sharegpt_entry(entry: ShareGPTEntry) -> Option<Conversation> {
+    pub(crate) fn parse_sharegpt_entry(entry: ShareGPTEntry) -> Option<Conversation> {
         let mut system_prompt = None;
         let mut user_turns = Vec::new();
 
@@ -1247,6 +1259,7 @@ impl BenchmarkRunner {
         match workload {
             Workload::SingleTurn(prompt) => {
                 Self::execute_request(
+                    system_prompt,
                     client,
                     tokenizer,
                     prompt,
@@ -1258,9 +1271,15 @@ impl BenchmarkRunner {
                 .await
             }
             Workload::MultiTurn(conversation) => {
-                let conversation = Conversation {
-                    system_prompt: system_prompt.clone(),
-                    ..conversation.clone()
+                // Only override the conversation's system prompt when one is explicitly configured.
+                // Otherwise preserve what the dataset provided (e.g. ShareGPT system prompts).
+                let conversation = if system_prompt.is_some() {
+                    Conversation {
+                        system_prompt: system_prompt.clone(),
+                        ..conversation.clone()
+                    }
+                } else {
+                    conversation.clone()
                 };
                 Self::execute_conversation(
                     client,
@@ -1484,7 +1503,27 @@ impl BenchmarkRunner {
         Ok(())
     }
 
+    pub(crate) fn build_single_turn_messages(
+        system_prompt: &Option<String>,
+        user_content: String,
+    ) -> Vec<Message> {
+        let mut messages = Vec::new();
+        if let Some(sp) = system_prompt {
+            messages.push(Message {
+                role: "system".to_string(),
+                content: sp.clone(),
+            });
+        }
+        messages.push(Message {
+            role: "user".to_string(),
+            content: user_content,
+        });
+        messages
+    }
+
+    #[allow(clippy::too_many_arguments)]
     async fn execute_request(
+        system_prompt: &Option<String>,
         client: Arc<OpenAIClient>,
         tokenizer: Arc<Tokenizer>,
         prompt: &Prompt,
@@ -1501,13 +1540,15 @@ impl BenchmarkRunner {
 
         // Add per-request cache-busting to ensure every request is unique
         // (unless disabled for prefix caching tests)
-        let final_prompt = if !cache_busting {
+        let user_content = if !cache_busting {
             prompt.prompt.clone()
         } else {
             format!("[req-{}] {}", index, prompt.prompt)
         };
         let max_tokens = resolve_max_tokens(default_max_tokens, prompt.max_tokens);
-        let request = client.create_request(&final_prompt, max_tokens, None, None);
+
+        let messages = Self::build_single_turn_messages(system_prompt, user_content);
+        let request = client.create_messages_request(&messages, max_tokens, None, None);
 
         match client.chat_completion_stream(request).await {
             Ok(mut stream) => {
@@ -1544,7 +1585,10 @@ impl BenchmarkRunner {
                 let input_tokens = if let Some(usage) = stream.server_usage() {
                     usage.prompt_tokens as u64
                 } else {
-                    tokenizer.count_tokens(&prompt.prompt) as u64
+                    messages
+                        .iter()
+                        .map(|m| tokenizer.count_tokens(&m.content))
+                        .sum::<usize>() as u64
                 };
 
                 // Only record metrics if not in warmup phase
@@ -1762,5 +1806,131 @@ impl BenchmarkRunner {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{InputConfig, SyntheticConfig};
+
+    // Helper to build a minimal synthetic InputConfig
+    fn synthetic_input(add_prefix: bool, cache_busting: bool) -> InputConfig {
+        InputConfig {
+            file: "synthetic".into(),
+            seed: None,
+            sample_size: None,
+            system_prompt: None,
+            system_prompt_file: None,
+            synthetic: Some(SyntheticConfig {
+                prompt_tokens: 100,
+                prompt_tokens_stdev: None,
+                prompt_tokens_min: None,
+                prompt_tokens_max: None,
+                add_prefix,
+                common_prefix_sample_ratio: 0.0,
+                common_prefix_tokens: 0,
+                turns: 1,
+                turn_prompt_tokens: None,
+            }),
+            cache_busting,
+        }
+    }
+
+    // --- ShareGPT system prompt preservation ---
+
+    #[test]
+    fn sharegpt_entry_captures_system_prompt() {
+        let entry = ShareGPTEntry {
+            conversations: vec![
+                ShareGPTMessage {
+                    from: "system".to_string(),
+                    value: "Be helpful.".to_string(),
+                },
+                ShareGPTMessage {
+                    from: "human".to_string(),
+                    value: "Hello".to_string(),
+                },
+                ShareGPTMessage {
+                    from: "gpt".to_string(),
+                    value: "Hi!".to_string(),
+                },
+            ],
+            max_tokens: None,
+        };
+        let conv = BenchmarkRunner::parse_sharegpt_entry(entry).unwrap();
+        assert_eq!(conv.system_prompt, Some("Be helpful.".to_string()));
+        assert_eq!(conv.user_turns, vec!["Hello"]);
+    }
+
+    #[test]
+    fn sharegpt_entry_without_system_prompt_is_none() {
+        let entry = ShareGPTEntry {
+            conversations: vec![
+                ShareGPTMessage {
+                    from: "human".to_string(),
+                    value: "Hello".to_string(),
+                },
+                ShareGPTMessage {
+                    from: "gpt".to_string(),
+                    value: "Hi!".to_string(),
+                },
+            ],
+            max_tokens: None,
+        };
+        let conv = BenchmarkRunner::parse_sharegpt_entry(entry).unwrap();
+        assert_eq!(conv.system_prompt, None);
+    }
+
+    // --- Single-turn system prompt message ordering ---
+
+    #[test]
+    fn build_single_turn_messages_prepends_system_message() {
+        let system = Some("You are a pirate.".to_string());
+        let messages = BenchmarkRunner::build_single_turn_messages(&system, "Hello".to_string());
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[0].content, "You are a pirate.");
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, "Hello");
+    }
+
+    #[test]
+    fn build_single_turn_messages_omits_system_when_none() {
+        let messages = BenchmarkRunner::build_single_turn_messages(&None, "Hello".to_string());
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "Hello");
+    }
+
+    // --- Synthetic cache-busting suppression ---
+
+    #[test]
+    fn cache_busting_suppressed_when_synthetic_add_prefix_on() {
+        assert!(synthetic_input(true, true).should_suppress_cache_busting());
+    }
+
+    #[test]
+    fn cache_busting_not_suppressed_when_add_prefix_off() {
+        assert!(!synthetic_input(false, true).should_suppress_cache_busting());
+    }
+
+    #[test]
+    fn cache_busting_not_suppressed_when_already_disabled() {
+        assert!(!synthetic_input(true, false).should_suppress_cache_busting());
+    }
+
+    #[test]
+    fn cache_busting_not_suppressed_for_file_mode() {
+        let config = InputConfig {
+            file: "prompts.jsonl".into(),
+            seed: None,
+            sample_size: None,
+            system_prompt: None,
+            system_prompt_file: None,
+            synthetic: None,
+            cache_busting: true,
+        };
+        assert!(!config.should_suppress_cache_busting());
     }
 }
