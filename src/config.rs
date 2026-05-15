@@ -53,6 +53,10 @@ pub struct EndpointConfig {
     pub health_check_timeout: u64, // Total time to wait for server readiness in seconds (0 = disabled)
     #[serde(default = "default_health_check_interval")]
     pub health_check_interval: u64, // Interval between readiness check retries in seconds
+    /// Additional kwargs passed to the model's chat template for every request.
+    /// For example, set `{enable_thinking = false}` to disable thinking mode on Qwen3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -91,6 +95,10 @@ fn default_common_prefix_sample_ratio() -> f64 {
 
 fn default_common_prefix_tokens() -> usize {
     0
+}
+
+fn default_cache_busting() -> bool {
+    true
 }
 
 fn default_turns() -> usize {
@@ -156,12 +164,12 @@ pub struct InputConfig {
     /// random prompts with controlled token distributions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synthetic: Option<SyntheticConfig>,
-    /// Disable the automatic [req-{index}] cache-busting prefix added to each prompt.
-    /// When true, prompts are sent as-is, allowing prefix caching to work.
-    /// When false (default), each prompt gets a unique prefix for independent benchmarking.
-    /// Default: false
-    #[serde(default)]
-    pub disable_cache_busting: bool,
+    /// Whether to prepend a unique [req-{index}] prefix to each prompt.
+    /// When true (default), each prompt gets a unique prefix for independent benchmarking.
+    /// When false, prompts are sent as-is, allowing prefix caching to work.
+    /// Default: true
+    #[serde(default = "default_cache_busting")]
+    pub cache_busting: bool,
 }
 
 impl InputConfig {
