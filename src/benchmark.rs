@@ -221,15 +221,15 @@ impl BenchmarkRunner {
         // In synthetic mode with add_prefix enabled, each generated prompt already carries a
         // unique [synthetic-{index}-t{turn}] prefix. Disable the request-level cache_busting
         // prefix to avoid stacking a redundant [req-N] on top and inflating token counts.
-        if config.input.is_synthetic() {
-            if let Some(ref syn) = config.input.synthetic {
-                if syn.add_prefix && config.input.cache_busting {
-                    info!(
-                        "Synthetic add_prefix is enabled; disabling cache_busting to avoid double prefix"
-                    );
-                    config.input.cache_busting = false;
-                }
-            }
+        if config.input.is_synthetic()
+            && let Some(ref syn) = config.input.synthetic
+            && syn.add_prefix
+            && config.input.cache_busting
+        {
+            info!(
+                "Synthetic add_prefix is enabled; disabling cache_busting to avoid double prefix"
+            );
+            config.input.cache_busting = false;
         }
 
         // Log what we loaded or generated
