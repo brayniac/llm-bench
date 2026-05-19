@@ -586,7 +586,21 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                let shared_prefix = Arc::clone(&self.shared_prefix);
+                let miss_counter = Arc::clone(&self.miss_counter);
+                let miss_rate = self.config.input.shared_prefix.as_ref()
+                    .map(|p| p.miss_rate)
+                    .unwrap_or(0.0);
+                let expected_hit = if shared_prefix.is_some() {
+                    !crate::metrics::should_miss(miss_rate)
+                } else {
+                    true
+                };
+                let bust_prefix_str = if shared_prefix.is_some() {
+                    compute_bust_prefix(expected_hit, &miss_counter)
+                } else {
+                    String::new()
+                };
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -604,7 +618,8 @@ impl BenchmarkRunner {
                         idx,
                         true,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     )
@@ -640,7 +655,21 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                let shared_prefix = Arc::clone(&self.shared_prefix);
+                let miss_counter = Arc::clone(&self.miss_counter);
+                let miss_rate = self.config.input.shared_prefix.as_ref()
+                    .map(|p| p.miss_rate)
+                    .unwrap_or(0.0);
+                let expected_hit = if shared_prefix.is_some() {
+                    !crate::metrics::should_miss(miss_rate)
+                } else {
+                    true
+                };
+                let bust_prefix_str = if shared_prefix.is_some() {
+                    compute_bust_prefix(expected_hit, &miss_counter)
+                } else {
+                    String::new()
+                };
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -658,7 +687,8 @@ impl BenchmarkRunner {
                         idx,
                         false,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     )
@@ -689,7 +719,11 @@ impl BenchmarkRunner {
                     // Capture system_prompt for this closure
                     let system_prompt = Arc::clone(&self.system_prompt);
                     let default_max_tokens = self.config.endpoint.max_tokens;
-                    let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                    let shared_prefix = Arc::clone(&self.shared_prefix);
+                    let miss_counter = Arc::clone(&self.miss_counter);
+                    let miss_rate = self.config.input.shared_prefix.as_ref()
+                        .map(|p| p.miss_rate)
+                        .unwrap_or(0.0);
                     let conversation_cfg = self.config.conversation;
                     let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -703,6 +737,17 @@ impl BenchmarkRunner {
                             let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
                             let workload = &workloads[idx % workloads.len()];
 
+                            let expected_hit = if shared_prefix.is_some() {
+                                !crate::metrics::should_miss(miss_rate)
+                            } else {
+                                true
+                            };
+                            let bust_prefix_str = if shared_prefix.is_some() {
+                                compute_bust_prefix(expected_hit, &miss_counter)
+                            } else {
+                                String::new()
+                            };
+
                             let _ = Self::execute_workload(
                                 &system_prompt,
                                 client.clone(),
@@ -711,7 +756,8 @@ impl BenchmarkRunner {
                                 idx,
                                 true,
                                 default_max_tokens,
-                                cache_busting,
+                                bust_prefix_str,
+                                expected_hit,
                                 conversation_cfg,
                                 delay_base_seed,
                             )
@@ -754,7 +800,11 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                let shared_prefix = Arc::clone(&self.shared_prefix);
+                let miss_counter = Arc::clone(&self.miss_counter);
+                let miss_rate = self.config.input.shared_prefix.as_ref()
+                    .map(|p| p.miss_rate)
+                    .unwrap_or(0.0);
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -786,6 +836,17 @@ impl BenchmarkRunner {
                             break;
                         }
 
+                        let expected_hit = if shared_prefix.is_some() {
+                            !crate::metrics::should_miss(miss_rate)
+                        } else {
+                            true
+                        };
+                        let bust_prefix_str = if shared_prefix.is_some() {
+                            compute_bust_prefix(expected_hit, &miss_counter)
+                        } else {
+                            String::new()
+                        };
+
                         // Execute workload with timeout based on remaining time
                         let request_future = Self::execute_workload(
                             &system_prompt,
@@ -795,7 +856,8 @@ impl BenchmarkRunner {
                             idx,
                             false,
                             default_max_tokens,
-                            cache_busting,
+                            bust_prefix_str,
+                            expected_hit,
                             conversation_cfg,
                             delay_base_seed,
                         );
@@ -891,7 +953,11 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                let shared_prefix = Arc::clone(&self.shared_prefix);
+                let miss_counter = Arc::clone(&self.miss_counter);
+                let miss_rate = self.config.input.shared_prefix.as_ref()
+                    .map(|p| p.miss_rate)
+                    .unwrap_or(0.0);
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -903,6 +969,16 @@ impl BenchmarkRunner {
                         };
                         let idx = prompt_index_clone.fetch_add(1, Ordering::Relaxed);
                         let workload = &workloads[idx % workloads.len()];
+                        let expected_hit = if shared_prefix.is_some() {
+                            !crate::metrics::should_miss(miss_rate)
+                        } else {
+                            true
+                        };
+                        let bust_prefix_str = if shared_prefix.is_some() {
+                            compute_bust_prefix(expected_hit, &miss_counter)
+                        } else {
+                            String::new()
+                        };
                         let _ = Self::execute_workload(
                             &system_prompt,
                             client.clone(),
@@ -911,7 +987,8 @@ impl BenchmarkRunner {
                             idx,
                             true,
                             default_max_tokens,
-                            cache_busting,
+                            bust_prefix_str,
+                            expected_hit,
                             conversation_cfg,
                             delay_base_seed,
                         )
@@ -954,7 +1031,11 @@ impl BenchmarkRunner {
             // Capture system_prompt for this closure
             let system_prompt = Arc::clone(&self.system_prompt);
             let default_max_tokens = self.config.endpoint.max_tokens;
-            let cache_busting = false; // TODO Task 7: replace with bust-token logic
+            let shared_prefix = Arc::clone(&self.shared_prefix);
+            let miss_counter = Arc::clone(&self.miss_counter);
+            let miss_rate = self.config.input.shared_prefix.as_ref()
+                .map(|p| p.miss_rate)
+                .unwrap_or(0.0);
             let conversation_cfg = self.config.conversation;
             let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -976,6 +1057,16 @@ impl BenchmarkRunner {
 
                     let idx = prompt_index.fetch_add(1, Ordering::Relaxed);
                     let workload = &workloads[idx % workloads.len()];
+                    let expected_hit = if shared_prefix.is_some() {
+                        !crate::metrics::should_miss(miss_rate)
+                    } else {
+                        true
+                    };
+                    let bust_prefix_str = if shared_prefix.is_some() {
+                        compute_bust_prefix(expected_hit, &miss_counter)
+                    } else {
+                        String::new()
+                    };
                     let _ = Self::execute_workload(
                         &system_prompt,
                         client.clone(),
@@ -984,7 +1075,8 @@ impl BenchmarkRunner {
                         idx,
                         false,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     )
@@ -1098,7 +1190,21 @@ impl BenchmarkRunner {
                 let warmup_completed = Arc::clone(&warmup_completed);
                 let system_prompt_clone = Arc::clone(&system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                let shared_prefix = Arc::clone(&self.shared_prefix);
+                let miss_counter = Arc::clone(&self.miss_counter);
+                let miss_rate = self.config.input.shared_prefix.as_ref()
+                    .map(|p| p.miss_rate)
+                    .unwrap_or(0.0);
+                let expected_hit = if shared_prefix.is_some() {
+                    !crate::metrics::should_miss(miss_rate)
+                } else {
+                    true
+                };
+                let bust_prefix_str = if shared_prefix.is_some() {
+                    compute_bust_prefix(expected_hit, &miss_counter)
+                } else {
+                    String::new()
+                };
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1116,7 +1222,8 @@ impl BenchmarkRunner {
                         idx,
                         true,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     )
@@ -1153,7 +1260,21 @@ impl BenchmarkRunner {
                 let warmup_completed = Arc::clone(&warmup_completed);
                 let system_prompt_closure = Arc::clone(&system_prompt_clone);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = false; // TODO Task 7: replace with bust-token logic
+                let shared_prefix = Arc::clone(&self.shared_prefix);
+                let miss_counter = Arc::clone(&self.miss_counter);
+                let miss_rate = self.config.input.shared_prefix.as_ref()
+                    .map(|p| p.miss_rate)
+                    .unwrap_or(0.0);
+                let expected_hit = if shared_prefix.is_some() {
+                    !crate::metrics::should_miss(miss_rate)
+                } else {
+                    true
+                };
+                let bust_prefix_str = if shared_prefix.is_some() {
+                    compute_bust_prefix(expected_hit, &miss_counter)
+                } else {
+                    String::new()
+                };
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1171,7 +1292,8 @@ impl BenchmarkRunner {
                         idx,
                         true,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     )
@@ -1237,7 +1359,21 @@ impl BenchmarkRunner {
             let request_timeout = remaining;
             let system_prompt_for_closure = Arc::clone(&system_prompt);
             let default_max_tokens = self.config.endpoint.max_tokens;
-            let cache_busting = false; // TODO Task 7: replace with bust-token logic
+            let shared_prefix = Arc::clone(&self.shared_prefix);
+            let miss_counter = Arc::clone(&self.miss_counter);
+            let miss_rate = self.config.input.shared_prefix.as_ref()
+                .map(|p| p.miss_rate)
+                .unwrap_or(0.0);
+            let expected_hit = if shared_prefix.is_some() {
+                !crate::metrics::should_miss(miss_rate)
+            } else {
+                true
+            };
+            let bust_prefix_str = if shared_prefix.is_some() {
+                compute_bust_prefix(expected_hit, &miss_counter)
+            } else {
+                String::new()
+            };
             let conversation_cfg = self.config.conversation;
             let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1257,7 +1393,8 @@ impl BenchmarkRunner {
                         idx,
                         false,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     );
@@ -1284,7 +1421,8 @@ impl BenchmarkRunner {
                         idx,
                         false,
                         default_max_tokens,
-                        cache_busting,
+                        bust_prefix_str,
+                        expected_hit,
                         conversation_cfg,
                         delay_base_seed,
                     )
@@ -1362,7 +1500,8 @@ impl BenchmarkRunner {
         index: usize,
         is_warmup: bool,
         default_max_tokens: Option<u32>,
-        cache_busting: bool,
+        bust_prefix: String,
+        expected_hit: bool,
         conversation_cfg: Option<ConversationConfig>,
         delay_base_seed: u64,
     ) -> Result<()> {
@@ -1376,7 +1515,8 @@ impl BenchmarkRunner {
                     index,
                     is_warmup,
                     default_max_tokens,
-                    cache_busting,
+                    bust_prefix,
+                    expected_hit,
                 )
                 .await
             }
@@ -1398,7 +1538,8 @@ impl BenchmarkRunner {
                     index,
                     is_warmup,
                     default_max_tokens,
-                    cache_busting,
+                    bust_prefix,
+                    expected_hit,
                     conversation_cfg,
                     delay_base_seed,
                 )
@@ -1415,7 +1556,8 @@ impl BenchmarkRunner {
         index: usize,
         is_warmup: bool,
         default_max_tokens: Option<u32>,
-        cache_busting: bool,
+        bust_prefix: String,
+        _expected_hit: bool,
         conversation_cfg: Option<ConversationConfig>,
         delay_base_seed: u64,
     ) -> Result<()> {
@@ -1456,11 +1598,11 @@ impl BenchmarkRunner {
         let total_turns = conversation.user_turns.len();
 
         for (turn_idx, user_turn) in conversation.user_turns.iter().enumerate() {
-            // Cache bust only the first user message to prevent cross-conversation
-            // cache hits, but allow prefix caching within the conversation
-            // (unless cache-busting is disabled)
-            let content = if cache_busting && turn_idx == 0 {
-                format!("[req-{}] {}", index, user_turn)
+            // Prepend bust_prefix only to the first user message to prevent
+            // cross-conversation cache hits while allowing prefix caching within
+            // the conversation
+            let content = if turn_idx == 0 {
+                format!("{}{}", bust_prefix, user_turn)
             } else {
                 user_turn.clone()
             };
@@ -1644,6 +1786,7 @@ impl BenchmarkRunner {
     pub(crate) fn build_single_turn_messages(
         system_prompt: &Option<String>,
         user_content: String,
+        bust_prefix: &str,
     ) -> Vec<Message> {
         let mut messages = Vec::new();
         if let Some(sp) = system_prompt {
@@ -1654,7 +1797,7 @@ impl BenchmarkRunner {
         }
         messages.push(Message {
             role: "user".to_string(),
-            content: user_content,
+            content: format!("{}{}", bust_prefix, user_content),
         });
         messages
     }
@@ -1668,7 +1811,8 @@ impl BenchmarkRunner {
         index: usize,
         is_warmup: bool,
         default_max_tokens: Option<u32>,
-        cache_busting: bool,
+        bust_prefix: String,
+        _expected_hit: bool,
     ) -> Result<()> {
         debug!("Executing request {} (warmup: {})", index, is_warmup);
 
@@ -1676,16 +1820,10 @@ impl BenchmarkRunner {
 
         let guard = InflightGuard::new(!is_warmup);
 
-        // Add per-request cache-busting to ensure every request is unique
-        // (unless disabled for prefix caching tests)
-        let user_content = if !cache_busting {
-            prompt.prompt.clone()
-        } else {
-            format!("[req-{}] {}", index, prompt.prompt)
-        };
+        let user_content = prompt.prompt.clone();
         let max_tokens = resolve_max_tokens(default_max_tokens, prompt.max_tokens);
 
-        let messages = Self::build_single_turn_messages(system_prompt, user_content);
+        let messages = Self::build_single_turn_messages(system_prompt, user_content, &bust_prefix);
         let request = client.create_messages_request(&messages, max_tokens, None, None);
 
         match client.chat_completion_stream(request).await {
@@ -2001,7 +2139,7 @@ mod tests {
     #[test]
     fn build_single_turn_messages_prepends_system_message() {
         let system = Some("You are a pirate.".to_string());
-        let messages = BenchmarkRunner::build_single_turn_messages(&system, "Hello".to_string());
+        let messages = BenchmarkRunner::build_single_turn_messages(&system, "Hello".to_string(), "");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[0].content, "You are a pirate.");
@@ -2011,10 +2149,33 @@ mod tests {
 
     #[test]
     fn build_single_turn_messages_omits_system_when_none() {
-        let messages = BenchmarkRunner::build_single_turn_messages(&None, "Hello".to_string());
+        let messages = BenchmarkRunner::build_single_turn_messages(&None, "Hello".to_string(), "");
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].content, "Hello");
+    }
+
+    #[test]
+    fn build_single_turn_with_bust_prefix_prepends_to_user_content() {
+        let messages = BenchmarkRunner::build_single_turn_messages(
+            &Some("sys".to_string()),
+            "hello".to_string(),
+            "[shared] ",
+        );
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[0].content, "sys");
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, "[shared] hello");
+    }
+
+    #[test]
+    fn build_single_turn_empty_bust_prefix_leaves_content_unchanged() {
+        let messages = BenchmarkRunner::build_single_turn_messages(
+            &None,
+            "hello".to_string(),
+            "",
+        );
+        assert_eq!(messages[0].content, "hello");
     }
 
     #[test]
