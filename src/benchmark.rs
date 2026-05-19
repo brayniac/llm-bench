@@ -109,6 +109,14 @@ pub(crate) fn compute_bust_prefix(expected_hit: bool, counter: &AtomicU64) -> St
     }
 }
 
+/// Returns Some(true/false) if the server reported cache details, None otherwise.
+pub(crate) fn actual_cache_hit_option(usage: &crate::client::Usage) -> Option<bool> {
+    usage
+        .prompt_tokens_details
+        .as_ref()
+        .map(|d| d.cached_tokens > 0)
+}
+
 impl BenchmarkRunner {
     /// Creates a new BenchmarkRunner with the given configuration.
     ///
@@ -1557,7 +1565,7 @@ impl BenchmarkRunner {
         is_warmup: bool,
         default_max_tokens: Option<u32>,
         bust_prefix: String,
-        _expected_hit: bool,
+        expected_hit: bool,
         conversation_cfg: Option<ConversationConfig>,
         delay_base_seed: u64,
     ) -> Result<()> {
@@ -1671,6 +1679,17 @@ impl BenchmarkRunner {
 
                         if let Some(ttft) = stream.time_to_first_token() {
                             Metrics::record_ttft(ttft, input_tokens);
+                            // Record cache outcome only for first turn (where bust_prefix applies)
+                            if turn_idx == 0 {
+                                let actual_hit = stream
+                                    .server_usage()
+                                    .and_then(|u| actual_cache_hit_option(u));
+                                crate::metrics::Metrics::record_cache_outcome(
+                                    expected_hit,
+                                    actual_hit,
+                                    ttft,
+                                );
+                            }
                         }
                         if let Some(ttft) = stream.time_to_first_content_token() {
                             Metrics::record_ttft_content(ttft, input_tokens);
@@ -1812,7 +1831,7 @@ impl BenchmarkRunner {
         is_warmup: bool,
         default_max_tokens: Option<u32>,
         bust_prefix: String,
-        _expected_hit: bool,
+        expected_hit: bool,
     ) -> Result<()> {
         debug!("Executing request {} (warmup: {})", index, is_warmup);
 
@@ -1874,6 +1893,15 @@ impl BenchmarkRunner {
                     // TTFT — first token of any kind (prefill latency)
                     if let Some(ttft) = stream.time_to_first_token() {
                         Metrics::record_ttft(ttft, input_tokens);
+                        // Record cache outcome split by expected/actual hit using TTFT
+                        let actual_hit = stream
+                            .server_usage()
+                            .and_then(|u| actual_cache_hit_option(u));
+                        crate::metrics::Metrics::record_cache_outcome(
+                            expected_hit,
+                            actual_hit,
+                            ttft,
+                        );
                     }
                     // TTFT content — first visible content token
                     if let Some(ttft) = stream.time_to_first_content_token() {
@@ -2192,5 +2220,29 @@ mod tests {
         let p2 = compute_bust_prefix(false, &counter);
         assert_eq!(p1, "[bust-1] ");
         assert_eq!(p2, "[bust-2] ");
+    }
+
+    #[test]
+    fn actual_cache_hit_detected_when_cached_tokens_nonzero() {
+        use crate::client::Usage;
+        let usage = Usage {
+            prompt_tokens: 100,
+            completion_tokens: 10,
+            total_tokens: 110,
+            prompt_tokens_details: Some(crate::client::PromptTokensDetails { cached_tokens: 80 }),
+        };
+        assert_eq!(actual_cache_hit_option(&usage), Some(true));
+    }
+
+    #[test]
+    fn actual_hit_absent_when_no_details() {
+        use crate::client::Usage;
+        let usage = Usage {
+            prompt_tokens: 100,
+            completion_tokens: 10,
+            total_tokens: 110,
+            prompt_tokens_details: None,
+        };
+        assert!(actual_cache_hit_option(&usage).is_none());
     }
 }
