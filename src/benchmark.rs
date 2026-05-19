@@ -13,8 +13,8 @@ use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 
 use crate::client::{ClientError, Message, OpenAIClient};
-use crate::config::{Config, resolve_max_tokens};
-use crate::distribution::RequestDistribution;
+use crate::config::{Config, ConversationConfig, resolve_max_tokens};
+use crate::distribution::{RequestDistribution, TurnDelayDistribution};
 use crate::metrics::{ErrorType, InflightGuard, Metrics, RequestStatus};
 use crate::report::ReportBuilder;
 use crate::saturation::SaturationResults;
@@ -250,7 +250,7 @@ impl BenchmarkRunner {
 
         // Load system prompt: first try inline string, then file if specified.
         // None means "not configured" — dataset conversations keep their own system prompts.
-        let system_prompt_opt: Option<String> = if let Some(ref inline) = config.input.system_prompt
+        let system_prompt_opt: Option<String> = if let Some(ref inline) = config.input.system_prompt_str
         {
             Some(inline.clone())
         } else if let Some(file_path) = &config.input.system_prompt_file {
@@ -382,6 +382,33 @@ impl BenchmarkRunner {
         let start_instant = Instant::now();
 
         debug!("Starting benchmark run");
+
+        if let Some(conv) = self.config.conversation
+            && conv.turn_delay_ms > 0
+            && let Some(duration_secs) = self.config.load.duration_seconds
+        {
+            let max_turns = self
+                .workloads
+                .iter()
+                .map(|w| match w {
+                    Workload::SingleTurn(_) => 1,
+                    Workload::MultiTurn(c) => c.user_turns.len(),
+                })
+                .max()
+                .unwrap_or(1);
+            if max_turns > 1 {
+                let needed_ms = (max_turns as u64).saturating_mul(conv.turn_delay_ms);
+                let budget_ms = duration_secs.saturating_mul(1000);
+                if needed_ms > budget_ms {
+                    warn!(
+                        "Inter-turn delays may exceed test duration: max conversation turns ({}) \
+                         * turn_delay_ms ({}) = {} ms exceeds duration_seconds={}s ({}ms). \
+                         Some conversations will not complete within the run.",
+                        max_turns, conv.turn_delay_ms, needed_ms, duration_secs, budget_ms
+                    );
+                }
+            }
+        }
 
         // Set running flag
         crate::metrics::RUNNING.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -517,6 +544,8 @@ impl BenchmarkRunner {
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let cache_busting = self.config.input.cache_busting;
+                let conversation_cfg = self.config.conversation;
+                let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                 let handle = tokio::spawn(async move {
                     let workload = &workloads[workload_idx];
@@ -533,6 +562,8 @@ impl BenchmarkRunner {
                         true,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     )
                     .await;
                     warmup_completed.fetch_add(1, Ordering::Relaxed);
@@ -567,6 +598,8 @@ impl BenchmarkRunner {
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let cache_busting = self.config.input.cache_busting;
+                let conversation_cfg = self.config.conversation;
+                let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                 let handle = tokio::spawn(async move {
                     let workload = &workloads[workload_idx];
@@ -583,6 +616,8 @@ impl BenchmarkRunner {
                         false,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     )
                     .await;
                     completed.fetch_add(1, Ordering::Relaxed);
@@ -612,6 +647,8 @@ impl BenchmarkRunner {
                     let system_prompt = Arc::clone(&self.system_prompt);
                     let default_max_tokens = self.config.endpoint.max_tokens;
                     let cache_busting = self.config.input.cache_busting;
+                    let conversation_cfg = self.config.conversation;
+                    let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                     let handle = tokio::spawn(async move {
                         while Instant::now() < warmup_deadline {
@@ -632,6 +669,8 @@ impl BenchmarkRunner {
                                 true,
                                 default_max_tokens,
                                 cache_busting,
+                                conversation_cfg,
+                                delay_base_seed,
                             )
                             .await;
                             warmup_completed.fetch_add(1, Ordering::Relaxed);
@@ -673,6 +712,8 @@ impl BenchmarkRunner {
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let cache_busting = self.config.input.cache_busting;
+                let conversation_cfg = self.config.conversation;
+                let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                 let handle = tokio::spawn(async move {
                     while !should_stop.load(Ordering::Relaxed) {
@@ -712,6 +753,8 @@ impl BenchmarkRunner {
                             false,
                             default_max_tokens,
                             cache_busting,
+                            conversation_cfg,
+                            delay_base_seed,
                         );
                         match tokio::time::timeout(remaining, request_future).await {
                             Ok(_) => {
@@ -806,6 +849,8 @@ impl BenchmarkRunner {
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let cache_busting = self.config.input.cache_busting;
+                let conversation_cfg = self.config.conversation;
+                let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                 let handle = tokio::spawn(async move {
                     while Instant::now() < warmup_deadline {
@@ -824,6 +869,8 @@ impl BenchmarkRunner {
                             true,
                             default_max_tokens,
                             cache_busting,
+                            conversation_cfg,
+                            delay_base_seed,
                         )
                         .await;
                     }
@@ -865,6 +912,8 @@ impl BenchmarkRunner {
             let system_prompt = Arc::clone(&self.system_prompt);
             let default_max_tokens = self.config.endpoint.max_tokens;
             let cache_busting = self.config.input.cache_busting;
+            let conversation_cfg = self.config.conversation;
+            let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
             handles.push(tokio::spawn(async move {
                 loop {
@@ -893,6 +942,8 @@ impl BenchmarkRunner {
                         false,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     )
                     .await;
                 }
@@ -1005,6 +1056,8 @@ impl BenchmarkRunner {
                 let system_prompt_clone = Arc::clone(&system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let cache_busting = self.config.input.cache_busting;
+                let conversation_cfg = self.config.conversation;
+                let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                 let handle = tokio::spawn(async move {
                     let workload = &workloads[workload_idx];
@@ -1021,6 +1074,8 @@ impl BenchmarkRunner {
                         true,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     )
                     .await;
                     warmup_completed.fetch_add(1, Ordering::Relaxed);
@@ -1056,6 +1111,8 @@ impl BenchmarkRunner {
                 let system_prompt_closure = Arc::clone(&system_prompt_clone);
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let cache_busting = self.config.input.cache_busting;
+                let conversation_cfg = self.config.conversation;
+                let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
                 let handle = tokio::spawn(async move {
                     let workload = &workloads[workload_idx];
@@ -1072,6 +1129,8 @@ impl BenchmarkRunner {
                         true,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     )
                     .await;
                     warmup_completed.fetch_add(1, Ordering::Relaxed);
@@ -1136,6 +1195,8 @@ impl BenchmarkRunner {
             let system_prompt_for_closure = Arc::clone(&system_prompt);
             let default_max_tokens = self.config.endpoint.max_tokens;
             let cache_busting = self.config.input.cache_busting;
+            let conversation_cfg = self.config.conversation;
+            let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
             let handle = tokio::spawn(async move {
                 let workload = &workloads[workload_idx];
@@ -1154,6 +1215,8 @@ impl BenchmarkRunner {
                         false,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     );
                     match timeout(timeout_duration, request_future).await {
                         Ok(result) => {
@@ -1179,6 +1242,8 @@ impl BenchmarkRunner {
                         false,
                         default_max_tokens,
                         cache_busting,
+                        conversation_cfg,
+                        delay_base_seed,
                     )
                     .await;
                     completed.fetch_add(1, Ordering::Relaxed);
@@ -1255,6 +1320,8 @@ impl BenchmarkRunner {
         is_warmup: bool,
         default_max_tokens: Option<u32>,
         cache_busting: bool,
+        conversation_cfg: Option<ConversationConfig>,
+        delay_base_seed: u64,
     ) -> Result<()> {
         match workload {
             Workload::SingleTurn(prompt) => {
@@ -1289,12 +1356,15 @@ impl BenchmarkRunner {
                     is_warmup,
                     default_max_tokens,
                     cache_busting,
+                    conversation_cfg,
+                    delay_base_seed,
                 )
                 .await
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_conversation(
         client: Arc<OpenAIClient>,
         tokenizer: Arc<Tokenizer>,
@@ -1303,6 +1373,8 @@ impl BenchmarkRunner {
         is_warmup: bool,
         default_max_tokens: Option<u32>,
         cache_busting: bool,
+        conversation_cfg: Option<ConversationConfig>,
+        delay_base_seed: u64,
     ) -> Result<()> {
         debug!(
             "Executing conversation {} ({} turns, warmup: {})",
@@ -1328,6 +1400,17 @@ impl BenchmarkRunner {
         }
 
         let mut conversation_failed = false;
+
+        // Per-conversation inter-turn delay sampler. Built only when delays are
+        // configured to a non-zero distribution, so the default-config path
+        // remains byte-identical to the pre-feature behavior.
+        let mut turn_delay = conversation_cfg
+            .filter(|c| !TurnDelayDistribution::is_no_op(c))
+            .map(|c| {
+                let seed = delay_base_seed.wrapping_add((index as u64).wrapping_mul(7919));
+                TurnDelayDistribution::new(&c, seed)
+            });
+        let total_turns = conversation.user_turns.len();
 
         for (turn_idx, user_turn) in conversation.user_turns.iter().enumerate() {
             // Cache bust only the first user message to prevent cross-conversation
@@ -1486,6 +1569,18 @@ impl BenchmarkRunner {
                     guard.complete(RequestStatus::Failed(error_type));
                     conversation_failed = true;
                     break;
+                }
+            }
+
+            // Inter-turn think time. The InflightGuard for this turn has already
+            // been consumed by `guard.complete(...)` above, so the conversation
+            // is not counted as in-flight while we sleep.
+            if let Some(ref mut sampler) = turn_delay
+                && turn_idx + 1 < total_turns
+            {
+                let delay = sampler.sample();
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
@@ -1820,8 +1915,10 @@ mod tests {
             file: "synthetic".into(),
             seed: None,
             sample_size: None,
-            system_prompt: None,
+            system_prompt_str: None,
             system_prompt_file: None,
+            system_prompt: None,
+            shared_prefix: None,
             synthetic: Some(SyntheticConfig {
                 prompt_tokens: 100,
                 prompt_tokens_stdev: None,
@@ -1926,8 +2023,10 @@ mod tests {
             file: "prompts.jsonl".into(),
             seed: None,
             sample_size: None,
-            system_prompt: None,
+            system_prompt_str: None,
             system_prompt_file: None,
+            system_prompt: None,
+            shared_prefix: None,
             synthetic: None,
             cache_busting: true,
         };
