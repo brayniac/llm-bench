@@ -177,6 +177,14 @@ pub struct CacheReport {
     pub hit_evicted: u64,
     pub miss_confirmed: u64,
     pub miss_spurious: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_expected_hit_p50_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_expected_hit_p99_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_expected_miss_p50_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttft_expected_miss_p99_ms: Option<f64>,
 }
 
 pub struct ReportBuilder {
@@ -789,11 +797,39 @@ pub fn build_cache_report() -> Option<CacheReport> {
         return None;
     }
 
+    let extract_ttft_p50_p99 = |idx: usize| -> (Option<f64>, Option<f64>) {
+        use crate::metrics::TTFT_BY_CACHE;
+        let loaded = match TTFT_BY_CACHE.load(idx) {
+            Some(h) => h,
+            None => return (None, None),
+        };
+        if let Ok(Some(result)) = loaded.quantiles(&[0.5, 0.99]) {
+            let values: Vec<f64> = result
+                .entries()
+                .values()
+                .map(|b| b.end() as f64 / 1_000_000.0)
+                .collect();
+            if values.len() == 2 {
+                return (Some(values[0]), Some(values[1]));
+            }
+        }
+        (None, None)
+    };
+
+    let (hit_p50, hit_p99) =
+        extract_ttft_p50_p99(crate::metrics::CACHE_EXPECTED_HIT_IDX);
+    let (miss_p50, miss_p99) =
+        extract_ttft_p50_p99(crate::metrics::CACHE_EXPECTED_MISS_IDX);
+
     Some(CacheReport {
         hit_confirmed,
         hit_evicted,
         miss_confirmed,
         miss_spurious,
+        ttft_expected_hit_p50_ms: hit_p50,
+        ttft_expected_hit_p99_ms: hit_p99,
+        ttft_expected_miss_p50_ms: miss_p50,
+        ttft_expected_miss_p99_ms: miss_p99,
     })
 }
 
@@ -812,10 +848,24 @@ pub fn build_cache_section() -> Option<String> {
         0.0
     };
 
-    Some(format!(
+    let mut s = format!(
         "Cache Outcomes: hit confirmed: {} | hit evicted: {} | miss confirmed: {} | miss spurious: {} | actual hit rate (of expected hits): {:.1}%",
         hit_confirmed, hit_evicted, miss_confirmed, miss_spurious, hit_rate
-    ))
+    );
+
+    if let (Some(hp50), Some(hp99), Some(mp50), Some(mp99)) = (
+        report.ttft_expected_hit_p50_ms,
+        report.ttft_expected_hit_p99_ms,
+        report.ttft_expected_miss_p50_ms,
+        report.ttft_expected_miss_p99_ms,
+    ) {
+        s.push_str(&format!(
+            "\n  TTFT expected-hit  p50={:.1}ms p99={:.1}ms  |  expected-miss  p50={:.1}ms p99={:.1}ms",
+            hp50, hp99, mp50, mp99
+        ));
+    }
+
+    Some(s)
 }
 
 #[cfg(test)]
