@@ -1,4 +1,4 @@
-use llm_perf::config::{Config, SharedPrefixConfig, SystemPromptConfig};
+use llm_perf::config::Config;
 use std::path::PathBuf;
 
 fn base_toml() -> &'static str {
@@ -90,6 +90,40 @@ fn shared_prefix_miss_rate_out_of_range_is_error() {
         base_toml()
     );
     let path = PathBuf::from("/tmp/pfx_bad.toml");
+    std::fs::write(&path, &toml).unwrap();
+    assert!(Config::load(&path).is_err());
+}
+
+#[test]
+fn unknown_field_in_input_is_error() {
+    let toml = format!("{}", base_toml())
+        .replace("[input]\nfile", "[input]\nunknown_field = true\nfile");
+    let path = PathBuf::from("/tmp/unknown.toml");
+    std::fs::write(&path, &toml).unwrap();
+    assert!(Config::load(&path).is_err());
+}
+
+#[test]
+fn unknown_field_at_top_level_is_error() {
+    let toml = format!("{}\n[bogus_section]\nfoo = 1\n", base_toml());
+    let path = PathBuf::from("/tmp/bogus_section.toml");
+    std::fs::write(&path, &toml).unwrap();
+    assert!(Config::load(&path).is_err());
+}
+
+#[test]
+fn cache_busting_field_is_error() {
+    let toml = format!("{}", base_toml())
+        .replace("[input]\nfile", "[input]\ncache_busting = false\nfile");
+    let path = PathBuf::from("/tmp/cb_field.toml");
+    std::fs::write(&path, &toml).unwrap();
+    assert!(Config::load(&path).is_err());
+}
+
+#[test]
+fn system_prompt_empty_table_is_error() {
+    let toml = format!("{}\n[input.system_prompt]\n", base_toml());
+    let path = PathBuf::from("/tmp/sp_empty.toml");
     std::fs::write(&path, &toml).unwrap();
     assert!(Config::load(&path).is_err());
 }

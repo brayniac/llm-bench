@@ -13,6 +13,7 @@ pub fn resolve_max_tokens(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub endpoint: EndpointConfig,
     pub load: LoadConfig,
@@ -37,6 +38,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConversationConfig {
     /// Mean delay between consecutive turns of a conversation, in milliseconds.
     #[serde(default)]
@@ -69,6 +71,7 @@ fn default_turn_delay_max_ms() -> u64 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EndpointConfig {
     pub base_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +107,7 @@ pub enum ArrivalDistribution {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LoadConfig {
     #[serde(default = "default_concurrent_requests")]
     pub concurrent_requests: usize,
@@ -121,10 +125,6 @@ pub struct LoadConfig {
     pub warmup_duration: Option<u64>, // Warmup duration in seconds (alternative to warmup_requests)
 }
 
-fn default_add_prefix() -> bool {
-    true
-}
-
 fn default_common_prefix_sample_ratio() -> f64 {
     0.0
 }
@@ -133,15 +133,12 @@ fn default_common_prefix_tokens() -> usize {
     0
 }
 
-fn default_cache_busting() -> bool {
-    true
-}
-
 fn default_turns() -> usize {
     1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SyntheticConfig {
     /// Average number of tokens in generated prompts
     pub prompt_tokens: usize,
@@ -154,10 +151,6 @@ pub struct SyntheticConfig {
     /// Maximum prompt token count (hard limit)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_max: Option<usize>,
-    /// Whether to add unique [synthetic-{index}] prefix for cache busting
-    /// Default: true
-    #[serde(default = "default_add_prefix")]
-    pub add_prefix: bool,
     /// Ratio of samples that share a common prefix (0.0 to 1.0).
     /// Used to test prefix caching effectiveness. 0.0 = all unique, 1.0 = all share common prefix.
     /// Selection is deterministic and strided (e.g. 0.5 picks every other request), not random.
@@ -220,56 +213,29 @@ impl SharedPrefixConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputConfig {
     pub file: PathBuf,
-    /// Seed for deterministic shuffling. If set, prompts are shuffled using this seed
-    /// for reproducible ordering across runs. If not set, prompts are used in file order.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sample_size: Option<usize>,
-    /// System prompt to use for conversations (legacy flat string field).
-    /// Prefer the new [input.system_prompt] table instead.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_prompt_str: Option<String>,
-    /// Path to a file containing the system prompt (legacy flat path field).
-    /// Prefer the new [input.system_prompt] table instead.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_prompt_file: Option<PathBuf>,
-    /// New table-based system prompt configuration.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<SystemPromptConfig>,
-    /// New table-based shared prefix configuration.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shared_prefix: Option<SharedPrefixConfig>,
-    /// Synthetic data configuration. Used when file = "synthetic" to generate
-    /// random prompts with controlled token distributions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synthetic: Option<SyntheticConfig>,
-    /// Whether to prepend a unique [req-{index}] prefix to each prompt.
-    /// When true (default), each prompt gets a unique prefix for independent benchmarking.
-    /// When false, prompts are sent as-is, allowing prefix caching to work.
-    /// Default: true
-    #[serde(default = "default_cache_busting")]
-    pub cache_busting: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<SystemPromptConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_prefix: Option<SharedPrefixConfig>,
 }
 
 impl InputConfig {
-    /// Check if synthetic mode is enabled
     pub fn is_synthetic(&self) -> bool {
         self.file.to_str() == Some("synthetic")
-    }
-
-    /// Returns true when cache_busting should be disabled because synthetic add_prefix
-    /// already guarantees uniqueness via a per-workload [synthetic-N-tT] prefix.
-    pub fn should_suppress_cache_busting(&self) -> bool {
-        self.is_synthetic()
-            && self.synthetic.as_ref().is_some_and(|s| s.add_prefix)
-            && self.cache_busting
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputConfig {
     #[serde(default = "default_output_format")]
     pub format: OutputFormat,
@@ -282,12 +248,14 @@ pub struct OutputConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
     #[serde(default = "default_worker_threads")]
     pub worker_threads: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LogConfig {
     #[serde(default = "default_log_level")]
     pub level: LogLevel,
@@ -326,6 +294,7 @@ pub enum OutputFormat {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     /// File for parquet metrics output
     pub output: PathBuf,
@@ -338,6 +307,7 @@ pub struct MetricsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdminConfig {
     #[serde(default = "default_admin_listen")]
     pub listen: String,
@@ -346,6 +316,7 @@ pub struct AdminConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LogprobsConfig {
     /// Whether to request logprobs from the server
     #[serde(default)]
@@ -388,6 +359,7 @@ impl Default for LogConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SaturationConfig {
     /// SLO thresholds — at least one metric/percentile must be specified
     pub slo: SloThresholds,
@@ -412,6 +384,7 @@ pub struct SaturationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SloThresholds {
     /// TTFT (time to first token) thresholds
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -425,6 +398,7 @@ pub struct SloThresholds {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SloPercentiles {
     /// Maximum acceptable p50 in milliseconds
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -711,7 +685,12 @@ impl Config {
         }
 
         if let Some(ref sp) = self.input.system_prompt {
-            if sp.source_count() != 1 {
+            if sp.source_count() == 0 {
+                anyhow::bail!(
+                    "input.system_prompt must have exactly one of: content, file, tokens"
+                );
+            }
+            if sp.source_count() > 1 {
                 anyhow::bail!(
                     "input.system_prompt must have exactly one of: content, file, tokens"
                 );

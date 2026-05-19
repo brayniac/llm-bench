@@ -19,7 +19,6 @@ use crate::metrics::{ErrorType, InflightGuard, Metrics, RequestStatus};
 use crate::report::ReportBuilder;
 use crate::saturation::SaturationResults;
 use crate::tokenizer::Tokenizer;
-use tokio::fs::read_to_string;
 
 /// A prompt to be sent to the LLM server.
 ///
@@ -218,16 +217,6 @@ impl BenchmarkRunner {
             }
         };
 
-        // In synthetic mode with add_prefix enabled, each generated prompt already carries a
-        // unique [synthetic-{index}-t{turn}] prefix. Disable the request-level cache_busting
-        // prefix to avoid stacking a redundant [req-N] on top and inflating token counts.
-        if config.input.should_suppress_cache_busting() {
-            info!(
-                "Synthetic add_prefix is enabled; disabling cache_busting to avoid double prefix"
-            );
-            config.input.cache_busting = false;
-        }
-
         // Log what we loaded or generated
         if config.input.is_synthetic() {
             info!("Generated {} synthetic prompts", workloads.len());
@@ -248,25 +237,8 @@ impl BenchmarkRunner {
             }
         }
 
-        // Load system prompt: first try inline string, then file if specified.
-        // None means "not configured" — dataset conversations keep their own system prompts.
-        let system_prompt_opt: Option<String> = if let Some(ref inline) = config.input.system_prompt_str
-        {
-            Some(inline.clone())
-        } else if let Some(file_path) = &config.input.system_prompt_file {
-            if let Ok(content) = read_to_string(file_path).await {
-                info!("Loaded system prompt from file: {}", file_path.display());
-                Some(content)
-            } else {
-                warn!("Failed to read system prompt file: {}", file_path.display());
-                return Err(anyhow::anyhow!(
-                    "Failed to read system prompt file: {}",
-                    file_path.display()
-                ));
-            }
-        } else {
-            None
-        };
+        // TODO Task 6: resolve system prompt from SystemPromptConfig
+        let system_prompt_opt: Option<String> = None;
 
         let system_prompt = Arc::new(system_prompt_opt);
         Ok(Self {
@@ -543,7 +515,7 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = self.config.input.cache_busting;
+                let cache_busting = false; // TODO Task 7: replace with bust-token logic
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -597,7 +569,7 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = self.config.input.cache_busting;
+                let cache_busting = false; // TODO Task 7: replace with bust-token logic
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -646,7 +618,7 @@ impl BenchmarkRunner {
                     // Capture system_prompt for this closure
                     let system_prompt = Arc::clone(&self.system_prompt);
                     let default_max_tokens = self.config.endpoint.max_tokens;
-                    let cache_busting = self.config.input.cache_busting;
+                    let cache_busting = false; // TODO Task 7: replace with bust-token logic
                     let conversation_cfg = self.config.conversation;
                     let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -711,7 +683,7 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = self.config.input.cache_busting;
+                let cache_busting = false; // TODO Task 7: replace with bust-token logic
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -848,7 +820,7 @@ impl BenchmarkRunner {
                 // Capture system_prompt for this closure
                 let system_prompt = Arc::clone(&self.system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = self.config.input.cache_busting;
+                let cache_busting = false; // TODO Task 7: replace with bust-token logic
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -911,7 +883,7 @@ impl BenchmarkRunner {
             // Capture system_prompt for this closure
             let system_prompt = Arc::clone(&self.system_prompt);
             let default_max_tokens = self.config.endpoint.max_tokens;
-            let cache_busting = self.config.input.cache_busting;
+            let cache_busting = false; // TODO Task 7: replace with bust-token logic
             let conversation_cfg = self.config.conversation;
             let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1055,7 +1027,7 @@ impl BenchmarkRunner {
                 let warmup_completed = Arc::clone(&warmup_completed);
                 let system_prompt_clone = Arc::clone(&system_prompt);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = self.config.input.cache_busting;
+                let cache_busting = false; // TODO Task 7: replace with bust-token logic
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1110,7 +1082,7 @@ impl BenchmarkRunner {
                 let warmup_completed = Arc::clone(&warmup_completed);
                 let system_prompt_closure = Arc::clone(&system_prompt_clone);
                 let default_max_tokens = self.config.endpoint.max_tokens;
-                let cache_busting = self.config.input.cache_busting;
+                let cache_busting = false; // TODO Task 7: replace with bust-token logic
                 let conversation_cfg = self.config.conversation;
                 let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1194,7 +1166,7 @@ impl BenchmarkRunner {
             let request_timeout = remaining;
             let system_prompt_for_closure = Arc::clone(&system_prompt);
             let default_max_tokens = self.config.endpoint.max_tokens;
-            let cache_busting = self.config.input.cache_busting;
+            let cache_busting = false; // TODO Task 7: replace with bust-token logic
             let conversation_cfg = self.config.conversation;
             let delay_base_seed = self.config.input.seed.unwrap_or(42);
 
@@ -1907,32 +1879,6 @@ impl BenchmarkRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{InputConfig, SyntheticConfig};
-
-    // Helper to build a minimal synthetic InputConfig
-    fn synthetic_input(add_prefix: bool, cache_busting: bool) -> InputConfig {
-        InputConfig {
-            file: "synthetic".into(),
-            seed: None,
-            sample_size: None,
-            system_prompt_str: None,
-            system_prompt_file: None,
-            system_prompt: None,
-            shared_prefix: None,
-            synthetic: Some(SyntheticConfig {
-                prompt_tokens: 100,
-                prompt_tokens_stdev: None,
-                prompt_tokens_min: None,
-                prompt_tokens_max: None,
-                add_prefix,
-                common_prefix_sample_ratio: 0.0,
-                common_prefix_tokens: 0,
-                turns: 1,
-                turn_prompt_tokens: None,
-            }),
-            cache_busting,
-        }
-    }
 
     // --- ShareGPT system prompt preservation ---
 
@@ -1998,38 +1944,5 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].content, "Hello");
-    }
-
-    // --- Synthetic cache-busting suppression ---
-
-    #[test]
-    fn cache_busting_suppressed_when_synthetic_add_prefix_on() {
-        assert!(synthetic_input(true, true).should_suppress_cache_busting());
-    }
-
-    #[test]
-    fn cache_busting_not_suppressed_when_add_prefix_off() {
-        assert!(!synthetic_input(false, true).should_suppress_cache_busting());
-    }
-
-    #[test]
-    fn cache_busting_not_suppressed_when_already_disabled() {
-        assert!(!synthetic_input(true, false).should_suppress_cache_busting());
-    }
-
-    #[test]
-    fn cache_busting_not_suppressed_for_file_mode() {
-        let config = InputConfig {
-            file: "prompts.jsonl".into(),
-            seed: None,
-            sample_size: None,
-            system_prompt_str: None,
-            system_prompt_file: None,
-            system_prompt: None,
-            shared_prefix: None,
-            synthetic: None,
-            cache_busting: true,
-        };
-        assert!(!config.should_suppress_cache_busting());
     }
 }
