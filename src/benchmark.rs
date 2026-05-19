@@ -5,7 +5,7 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -96,6 +96,17 @@ pub struct BenchmarkRunner {
     workloads: Arc<Vec<Workload>>, // Wrapped in Arc to avoid cloning
     tokenizer: Arc<Tokenizer>,
     system_prompt: Arc<Option<String>>, // Wrapped in Arc to avoid per-request cloning
+    shared_prefix: Arc<Option<String>>,
+    miss_counter: Arc<AtomicU64>,
+}
+
+pub(crate) fn compute_bust_prefix(expected_hit: bool, counter: &AtomicU64) -> String {
+    if expected_hit {
+        "[shared] ".to_string()
+    } else {
+        let n = counter.fetch_add(1, Ordering::Relaxed) + 1;
+        format!("[bust-{}] ", n)
+    }
 }
 
 impl BenchmarkRunner {
@@ -237,16 +248,76 @@ impl BenchmarkRunner {
             }
         }
 
-        // TODO Task 6: resolve system prompt from SystemPromptConfig
-        let system_prompt_opt: Option<String> = None;
+        let system_prompt_text: Option<String> = match &config.input.system_prompt {
+            None => None,
+            Some(sp) => {
+                if let Some(ref content) = sp.content {
+                    Some(content.clone())
+                } else if let Some(ref file_path) = sp.file {
+                    match tokio::fs::read_to_string(file_path).await {
+                        Ok(content) => Some(content),
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "Failed to read system prompt file {}: {}",
+                                file_path.display(),
+                                e
+                            ));
+                        }
+                    }
+                } else if let Some(tokens) = sp.tokens {
+                    let seed = config.input.seed.unwrap_or(42);
+                    info!("Generating {}-token synthetic system prompt", tokens);
+                    Some(crate::synthetic::generate_fixed_text(
+                        tokens,
+                        Arc::clone(&tokenizer),
+                        seed,
+                    ))
+                } else {
+                    None
+                }
+            }
+        };
+        let system_prompt = Arc::new(system_prompt_text);
 
-        let system_prompt = Arc::new(system_prompt_opt);
+        let shared_prefix_text: Option<String> = match &config.input.shared_prefix {
+            None => None,
+            Some(pfx) => {
+                if let Some(ref content) = pfx.content {
+                    Some(content.clone())
+                } else if let Some(ref file_path) = pfx.file {
+                    match tokio::fs::read_to_string(file_path).await {
+                        Ok(content) => Some(content),
+                        Err(e) => {
+                            return Err(anyhow::anyhow!(
+                                "Failed to read shared prefix file {}: {}",
+                                file_path.display(),
+                                e
+                            ));
+                        }
+                    }
+                } else if let Some(tokens) = pfx.tokens {
+                    let seed = config.input.seed.unwrap_or(42).wrapping_add(1);
+                    info!("Generating {}-token synthetic shared prefix", tokens);
+                    Some(crate::synthetic::generate_fixed_text(
+                        tokens,
+                        Arc::clone(&tokenizer),
+                        seed,
+                    ))
+                } else {
+                    None
+                }
+            }
+        };
+        let shared_prefix = Arc::new(shared_prefix_text);
+
         Ok(Self {
             client: Arc::new(client),
             config,
             workloads: Arc::new(workloads), // Wrap in Arc
             tokenizer,
             system_prompt, // Arc-wrapped to avoid per-request cloning
+            shared_prefix,
+            miss_counter: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -1944,5 +2015,21 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].content, "Hello");
+    }
+
+    #[test]
+    fn bust_prefix_for_hit_is_shared_tag() {
+        let counter = std::sync::atomic::AtomicU64::new(0);
+        let prefix = compute_bust_prefix(true, &counter);
+        assert_eq!(prefix, "[shared] ");
+    }
+
+    #[test]
+    fn bust_prefix_for_miss_increments_counter() {
+        let counter = std::sync::atomic::AtomicU64::new(0);
+        let p1 = compute_bust_prefix(false, &counter);
+        let p2 = compute_bust_prefix(false, &counter);
+        assert_eq!(p1, "[bust-1] ");
+        assert_eq!(p2, "[bust-2] ");
     }
 }
