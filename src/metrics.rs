@@ -445,7 +445,7 @@ impl Metrics {
     }
 
     /// Record a cache outcome and split TTFT.
-    /// `expected_hit`: true if request was sent with [shared] prefix (expected cache hit).
+    /// `expected_hit`: true if request was sent with `[shared]` prefix (expected cache hit).
     /// `actual_hit`: true if server reported cached_tokens > 0. None if server did not report.
     pub fn record_cache_outcome(
         expected_hit: bool,

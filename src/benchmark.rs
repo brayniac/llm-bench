@@ -1719,7 +1719,7 @@ impl BenchmarkRunner {
                             if turn_idx == 0 {
                                 let actual_hit = stream
                                     .server_usage()
-                                    .and_then(|u| actual_cache_hit_option(u));
+                                    .and_then(actual_cache_hit_option);
                                 crate::metrics::Metrics::record_cache_outcome(
                                     expected_hit,
                                     actual_hit,
@@ -1932,7 +1932,7 @@ impl BenchmarkRunner {
                         // Record cache outcome split by expected/actual hit using TTFT
                         let actual_hit = stream
                             .server_usage()
-                            .and_then(|u| actual_cache_hit_option(u));
+                            .and_then(actual_cache_hit_option);
                         crate::metrics::Metrics::record_cache_outcome(
                             expected_hit,
                             actual_hit,
