@@ -284,6 +284,30 @@ impl Metrics {
                 );
             }
         }
+
+        // Cache outcome counter metadata
+        for (idx, outcome) in [
+            "hit_confirmed",
+            "hit_evicted",
+            "miss_confirmed",
+            "miss_spurious",
+        ]
+        .iter()
+        .enumerate()
+        {
+            CACHE.set_metadata(
+                idx,
+                HashMap::from([("outcome".to_string(), outcome.to_string())]),
+            );
+        }
+
+        // TTFT_BY_CACHE histogram metadata
+        for (idx, expected) in ["hit", "miss"].iter().enumerate() {
+            TTFT_BY_CACHE.set_metadata(
+                idx,
+                HashMap::from([("expected".to_string(), expected.to_string())]),
+            );
+        }
     }
 
     fn record_status(status: RequestStatus) {
