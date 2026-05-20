@@ -456,6 +456,29 @@ impl Config {
             anyhow::bail!("Only one of total_requests or duration_seconds can be specified");
         }
 
+        if self.load.warmup_requests.is_some() && self.load.warmup_duration.is_some() {
+            anyhow::bail!(
+                "Only one of load.warmup_requests or load.warmup_duration can be specified"
+            );
+        }
+
+        // warmup_requests is only meaningful in total_requests concurrent mode or QPS mode;
+        // in duration-based concurrent mode and saturation mode it would be silently ignored
+        if self.load.warmup_requests.is_some() {
+            if self.load.duration_seconds.is_some() && self.load.qps.is_none() {
+                anyhow::bail!(
+                    "load.warmup_requests cannot be used with duration_seconds in concurrent mode; \
+                     use load.warmup_duration instead"
+                );
+            }
+            if self.saturation.is_some() {
+                anyhow::bail!(
+                    "load.warmup_requests cannot be used in saturation mode; \
+                     use load.warmup_duration instead"
+                );
+            }
+        }
+
         if self.load.concurrent_requests == 0 {
             anyhow::bail!("concurrent_requests must be greater than 0");
         }
@@ -573,26 +596,26 @@ impl Config {
             if synthetic.turns == 0 {
                 anyhow::bail!("input.synthetic.turns must be greater than 0");
             }
-            if let Some(turn_tokens) = synthetic.turn_prompt_tokens
-                && turn_tokens == 0
-            {
-                anyhow::bail!(
-                    "input.synthetic.turn_prompt_tokens must be greater than 0 if specified"
-                );
-            }
-            if let Some(turn_tokens) = synthetic.turn_prompt_tokens
-                && turn_tokens
-                    > synthetic
-                        .prompt_tokens_max
-                        .unwrap_or(synthetic.prompt_tokens)
-            {
-                anyhow::bail!(
-                    "input.synthetic.turn_prompt_tokens ({}) cannot exceed prompt_tokens_max ({})",
-                    turn_tokens,
-                    synthetic
-                        .prompt_tokens_max
-                        .unwrap_or(synthetic.prompt_tokens),
-                );
+            if let Some(turn_tokens) = synthetic.turn_prompt_tokens {
+                if turn_tokens == 0 {
+                    anyhow::bail!(
+                        "input.synthetic.turn_prompt_tokens must be greater than 0 if specified"
+                    );
+                }
+                // Effective upper bound matches TokenDistribution: explicit max, or
+                // prompt_tokens + 5*stdev (the Gaussian tail clamp), or prompt_tokens when
+                // no stdev is set.
+                let effective_max = synthetic.prompt_tokens_max.unwrap_or_else(|| {
+                    synthetic.prompt_tokens + 5 * synthetic.prompt_tokens_stdev.unwrap_or(0)
+                });
+                if turn_tokens > effective_max {
+                    anyhow::bail!(
+                        "input.synthetic.turn_prompt_tokens ({}) cannot exceed effective maximum \
+                         prompt tokens ({})",
+                        turn_tokens,
+                        effective_max,
+                    );
+                }
             }
         }
 

@@ -132,9 +132,9 @@ total_requests = 100
 #   - max_tokens in [endpoint] is required for synthetic mode to control maximum output length
 #   - prompt_tokens controls the prompt length
 #   - prompt_tokens_stdev, prompt_tokens_min, prompt_tokens_max (optional) control variability and limits of prompt lengths
-#   - add_prefix (default: true) adds a unique prefix "[synthetic-{index}] " to each generated prompt. Please notice that llm-perf
-#     also adds a unique cache-busting prefix "[req-{index}] " to every prompt after loading the input prompts by default, so
-#     set input.cache_busting = false to disable the cache-busting prefix added by llm-perf.
+#   - add_prefix (default: true) adds a unique "[synthetic-{index}-t{turn}]" prefix to each generated prompt.
+#     When add_prefix is enabled, llm-perf automatically disables the request-level cache_busting prefix to
+#     avoid double-prefixing; you do not need to set cache_busting = false manually.
 #   - common_prefix_sample_ratio (default: 0.0) controls the ratio of generated prompts that have a common prefix. When testing the prefix cache effectiveness,
 #     it's essential to set [input.cache_busting] = false to avoid adding unique cache-busting prefixes to each prompt.
 #   - common_prefix_tokens (default: 0) controls the token length of the shared common prefix
@@ -176,12 +176,15 @@ file = "examples/prompts/openorca-10000.jsonl"
 # Default: true
 # cache_busting = true
 
-# Seed for deterministic shuffling (recommended for realistic but reproducible testing)
-# Same seed always produces the same prompt ordering across runs.
-# If not set, prompts are used in file order.
+# Seed for deterministic, reproducible runs.
+# In file/dataset mode: shuffles prompts with this seed for reproducible ordering.
+# In synthetic mode: seeds the prompt generator for reproducible synthetic prompts.
+# If not set, file mode uses file order; synthetic mode uses a default seed (42).
 # seed = 42
 
-# Limit to first N prompts from file (applied before shuffling, useful for quick tests)
+# Control dataset size:
+# In file/dataset mode: take the first N prompts from the file (applied before shuffling)
+# In synthetic mode: generate exactly N prompts (default: 10000)
 # sample_size = 50
 
 # System Prompt Override (Optional)
@@ -193,7 +196,7 @@ file = "examples/prompts/openorca-10000.jsonl"
 # System Prompt from File (Optional)
 # Path to a file containing the system prompt to use for all requests.
 # This is an alternative to system_prompt (inline string).
-# The path is relative to the current working directory (where the config file is located).
+# The path is relative to the process's current working directory (where llm-perf is invoked from).
 # If both system_prompt and system_prompt_file are set, system_prompt takes precedence.
 # system_prompt_file = "prompts/system.md"
 
