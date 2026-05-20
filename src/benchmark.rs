@@ -1717,9 +1717,8 @@ impl BenchmarkRunner {
                             Metrics::record_ttft(ttft, input_tokens);
                             // Record cache outcome only for first turn (where bust_prefix applies)
                             if turn_idx == 0 {
-                                let actual_hit = stream
-                                    .server_usage()
-                                    .and_then(actual_cache_hit_option);
+                                let actual_hit =
+                                    stream.server_usage().and_then(actual_cache_hit_option);
                                 crate::metrics::Metrics::record_cache_outcome(
                                     expected_hit,
                                     actual_hit,
@@ -1930,9 +1929,7 @@ impl BenchmarkRunner {
                     if let Some(ttft) = stream.time_to_first_token() {
                         Metrics::record_ttft(ttft, input_tokens);
                         // Record cache outcome split by expected/actual hit using TTFT
-                        let actual_hit = stream
-                            .server_usage()
-                            .and_then(actual_cache_hit_option);
+                        let actual_hit = stream.server_usage().and_then(actual_cache_hit_option);
                         crate::metrics::Metrics::record_cache_outcome(
                             expected_hit,
                             actual_hit,

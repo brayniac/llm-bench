@@ -90,8 +90,7 @@ fn shared_prefix_miss_rate_out_of_range_is_error() {
 
 #[test]
 fn unknown_field_in_input_is_error() {
-    let toml =
-        base_toml().replace("[input]\nfile", "[input]\nunknown_field = true\nfile");
+    let toml = base_toml().replace("[input]\nfile", "[input]\nunknown_field = true\nfile");
     let path = PathBuf::from("/tmp/unknown.toml");
     std::fs::write(&path, &toml).unwrap();
     assert!(Config::load(&path).is_err());
@@ -107,8 +106,7 @@ fn unknown_field_at_top_level_is_error() {
 
 #[test]
 fn cache_busting_field_is_error() {
-    let toml =
-        base_toml().replace("[input]\nfile", "[input]\ncache_busting = false\nfile");
+    let toml = base_toml().replace("[input]\nfile", "[input]\ncache_busting = false\nfile");
     let path = PathBuf::from("/tmp/cb_field.toml");
     std::fs::write(&path, &toml).unwrap();
     assert!(Config::load(&path).is_err());
