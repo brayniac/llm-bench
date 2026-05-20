@@ -266,7 +266,6 @@ impl SyntheticDataGenerator {
             }
         }
     }
-
 }
 
 /// Generate fixed-seed synthetic text of exactly `token_count` tokens.

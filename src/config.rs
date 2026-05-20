@@ -183,10 +183,14 @@ pub struct SystemPromptConfig {
 
 impl SystemPromptConfig {
     fn source_count(&self) -> usize {
-        [self.content.is_some(), self.file.is_some(), self.tokens.is_some()]
-            .iter()
-            .filter(|&&x| x)
-            .count()
+        [
+            self.content.is_some(),
+            self.file.is_some(),
+            self.tokens.is_some(),
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count()
     }
 }
 
@@ -205,10 +209,14 @@ pub struct SharedPrefixConfig {
 
 impl SharedPrefixConfig {
     fn source_count(&self) -> usize {
-        [self.content.is_some(), self.file.is_some(), self.tokens.is_some()]
-            .iter()
-            .filter(|&&x| x)
-            .count()
+        [
+            self.content.is_some(),
+            self.file.is_some(),
+            self.tokens.is_some(),
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count()
     }
 }
 

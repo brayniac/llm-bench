@@ -149,9 +149,9 @@ pub static ITL: HistogramGroup = HistogramGroup::new(ITL_ENTRIES, 7, 64);
 
 // Cache outcome counters — indexed by expected×actual behavior
 pub const CACHE_HIT_CONFIRMED: usize = 0; // expected hit, actual hit
-pub const CACHE_HIT_EVICTED: usize = 1;   // expected hit, actual miss (eviction signal)
+pub const CACHE_HIT_EVICTED: usize = 1; // expected hit, actual miss (eviction signal)
 pub const CACHE_MISS_CONFIRMED: usize = 2; // expected miss, actual miss
-pub const CACHE_MISS_SPURIOUS: usize = 3;  // expected miss, actual hit
+pub const CACHE_MISS_SPURIOUS: usize = 3; // expected miss, actual hit
 
 #[metric(name = "cache")]
 pub static CACHE: CounterGroup = CounterGroup::new(4);

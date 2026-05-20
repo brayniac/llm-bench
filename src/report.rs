@@ -816,10 +816,8 @@ pub fn build_cache_report() -> Option<CacheReport> {
         (None, None)
     };
 
-    let (hit_p50, hit_p99) =
-        extract_ttft_p50_p99(crate::metrics::CACHE_EXPECTED_HIT_IDX);
-    let (miss_p50, miss_p99) =
-        extract_ttft_p50_p99(crate::metrics::CACHE_EXPECTED_MISS_IDX);
+    let (hit_p50, hit_p99) = extract_ttft_p50_p99(crate::metrics::CACHE_EXPECTED_HIT_IDX);
+    let (miss_p50, miss_p99) = extract_ttft_p50_p99(crate::metrics::CACHE_EXPECTED_MISS_IDX);
 
     Some(CacheReport {
         hit_confirmed,

@@ -596,7 +596,11 @@ impl BenchmarkRunner {
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let shared_prefix = Arc::clone(&self.shared_prefix);
                 let miss_counter = Arc::clone(&self.miss_counter);
-                let miss_rate = self.config.input.shared_prefix.as_ref()
+                let miss_rate = self
+                    .config
+                    .input
+                    .shared_prefix
+                    .as_ref()
                     .map(|p| p.miss_rate)
                     .unwrap_or(0.0);
                 let expected_hit = if shared_prefix.is_some() {
@@ -665,7 +669,11 @@ impl BenchmarkRunner {
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let shared_prefix = Arc::clone(&self.shared_prefix);
                 let miss_counter = Arc::clone(&self.miss_counter);
-                let miss_rate = self.config.input.shared_prefix.as_ref()
+                let miss_rate = self
+                    .config
+                    .input
+                    .shared_prefix
+                    .as_ref()
                     .map(|p| p.miss_rate)
                     .unwrap_or(0.0);
                 let expected_hit = if shared_prefix.is_some() {
@@ -729,7 +737,11 @@ impl BenchmarkRunner {
                     let default_max_tokens = self.config.endpoint.max_tokens;
                     let shared_prefix = Arc::clone(&self.shared_prefix);
                     let miss_counter = Arc::clone(&self.miss_counter);
-                    let miss_rate = self.config.input.shared_prefix.as_ref()
+                    let miss_rate = self
+                        .config
+                        .input
+                        .shared_prefix
+                        .as_ref()
                         .map(|p| p.miss_rate)
                         .unwrap_or(0.0);
                     let conversation_cfg = self.config.conversation;
@@ -810,7 +822,11 @@ impl BenchmarkRunner {
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let shared_prefix = Arc::clone(&self.shared_prefix);
                 let miss_counter = Arc::clone(&self.miss_counter);
-                let miss_rate = self.config.input.shared_prefix.as_ref()
+                let miss_rate = self
+                    .config
+                    .input
+                    .shared_prefix
+                    .as_ref()
                     .map(|p| p.miss_rate)
                     .unwrap_or(0.0);
                 let conversation_cfg = self.config.conversation;
@@ -963,7 +979,11 @@ impl BenchmarkRunner {
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let shared_prefix = Arc::clone(&self.shared_prefix);
                 let miss_counter = Arc::clone(&self.miss_counter);
-                let miss_rate = self.config.input.shared_prefix.as_ref()
+                let miss_rate = self
+                    .config
+                    .input
+                    .shared_prefix
+                    .as_ref()
                     .map(|p| p.miss_rate)
                     .unwrap_or(0.0);
                 let conversation_cfg = self.config.conversation;
@@ -1041,7 +1061,11 @@ impl BenchmarkRunner {
             let default_max_tokens = self.config.endpoint.max_tokens;
             let shared_prefix = Arc::clone(&self.shared_prefix);
             let miss_counter = Arc::clone(&self.miss_counter);
-            let miss_rate = self.config.input.shared_prefix.as_ref()
+            let miss_rate = self
+                .config
+                .input
+                .shared_prefix
+                .as_ref()
                 .map(|p| p.miss_rate)
                 .unwrap_or(0.0);
             let conversation_cfg = self.config.conversation;
@@ -1200,7 +1224,11 @@ impl BenchmarkRunner {
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let shared_prefix = Arc::clone(&self.shared_prefix);
                 let miss_counter = Arc::clone(&self.miss_counter);
-                let miss_rate = self.config.input.shared_prefix.as_ref()
+                let miss_rate = self
+                    .config
+                    .input
+                    .shared_prefix
+                    .as_ref()
                     .map(|p| p.miss_rate)
                     .unwrap_or(0.0);
                 let expected_hit = if shared_prefix.is_some() {
@@ -1270,7 +1298,11 @@ impl BenchmarkRunner {
                 let default_max_tokens = self.config.endpoint.max_tokens;
                 let shared_prefix = Arc::clone(&self.shared_prefix);
                 let miss_counter = Arc::clone(&self.miss_counter);
-                let miss_rate = self.config.input.shared_prefix.as_ref()
+                let miss_rate = self
+                    .config
+                    .input
+                    .shared_prefix
+                    .as_ref()
                     .map(|p| p.miss_rate)
                     .unwrap_or(0.0);
                 let expected_hit = if shared_prefix.is_some() {
@@ -1369,7 +1401,11 @@ impl BenchmarkRunner {
             let default_max_tokens = self.config.endpoint.max_tokens;
             let shared_prefix = Arc::clone(&self.shared_prefix);
             let miss_counter = Arc::clone(&self.miss_counter);
-            let miss_rate = self.config.input.shared_prefix.as_ref()
+            let miss_rate = self
+                .config
+                .input
+                .shared_prefix
+                .as_ref()
                 .map(|p| p.miss_rate)
                 .unwrap_or(0.0);
             let expected_hit = if shared_prefix.is_some() {
@@ -2167,7 +2203,8 @@ mod tests {
     #[test]
     fn build_single_turn_messages_prepends_system_message() {
         let system = Some("You are a pirate.".to_string());
-        let messages = BenchmarkRunner::build_single_turn_messages(&system, "Hello".to_string(), "");
+        let messages =
+            BenchmarkRunner::build_single_turn_messages(&system, "Hello".to_string(), "");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[0].content, "You are a pirate.");
@@ -2198,11 +2235,7 @@ mod tests {
 
     #[test]
     fn build_single_turn_empty_bust_prefix_leaves_content_unchanged() {
-        let messages = BenchmarkRunner::build_single_turn_messages(
-            &None,
-            "hello".to_string(),
-            "",
-        );
+        let messages = BenchmarkRunner::build_single_turn_messages(&None, "hello".to_string(), "");
         assert_eq!(messages[0].content, "hello");
     }
 

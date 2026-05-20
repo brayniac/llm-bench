@@ -40,7 +40,10 @@ format = "json"
     std::fs::write(&path, toml_content).unwrap();
     let cfg = Config::load(&path).unwrap();
 
-    eprintln!("config.endpoint.chat_template_kwargs = {:?}", cfg.endpoint.chat_template_kwargs);
+    eprintln!(
+        "config.endpoint.chat_template_kwargs = {:?}",
+        cfg.endpoint.chat_template_kwargs
+    );
 
     let client = OpenAIClient::new(ClientConfig {
         base_url: cfg.endpoint.base_url.clone(),
@@ -52,7 +55,8 @@ format = "json"
         retry_max_delay_ms: cfg.endpoint.retry_max_delay_ms,
         pool_size: 4,
         chat_template_kwargs: cfg.endpoint.chat_template_kwargs.clone(),
-    }).unwrap();
+    })
+    .unwrap();
 
     let messages = vec![Message {
         role: "user".to_string(),
@@ -61,6 +65,14 @@ format = "json"
     let request = client.create_messages_request(&messages, Some(1), None, None);
     let body = serde_json::to_string(&request).unwrap();
     eprintln!("WIRE BODY: {}", body);
-    assert!(body.contains("chat_template_kwargs"), "chat_template_kwargs missing from wire body: {}", body);
-    assert!(body.contains("enable_thinking"), "enable_thinking missing from wire body: {}", body);
+    assert!(
+        body.contains("chat_template_kwargs"),
+        "chat_template_kwargs missing from wire body: {}",
+        body
+    );
+    assert!(
+        body.contains("enable_thinking"),
+        "enable_thinking missing from wire body: {}",
+        body
+    );
 }
